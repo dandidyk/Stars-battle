@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Stars Battle</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d0d1a; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+// ============================================================
+// CONSTANTS
+// ============================================================
+const PLAYER_ID  = 0;
+const AI_ID      = 1;
+const NEUTRAL_ID = -1;
+
+const COLORS = { [NEUTRAL_ID]: '#555566', [PLAYER_ID]: '#4fc3f7', [AI_ID]: '#ef5350' };
+
+const UNIT_SPEED       = 130; // px/sec
+const FLEET_SEND_RATIO = 0.5;
+const MIN_STAR_RADIUS  = 20;
+const MAX_STAR_RADIUS  = 44;
+const STAR_BASE_REGEN  = 1.0; // units/sec at max radius
+const GLOW_PULSE_SPEED = 2.2; // Hz
+
+const DIFFICULTY = {
+  easy:   { stars: 8,  aiInterval: 2200, attackThreshold: 1.5, minSend: 18, aggression: 0.3, sendRatio: 0.5 },
+  normal: { stars: 12, aiInterval: 1100, attackThreshold: 1.1, minSend: 10, aggression: 0.9, sendRatio: 0.5 },
+  hard:   { stars: 16, aiInterval:  550, attackThreshold: 0.8, minSend:  6, aggression: 1.6, sendRatio: 0.65 },
+};
+
+// ============================================================
+// STATE
+// ============================================================
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d');
+let logW, logH, dpr;
+
+let state = {
+  phase:        'START',  // START | PLAYING | WIN | LOSE
+  stars:        [],
+  fleets:       [],
+  fleetCounter: 0,
+  selected:     null,    // id of selected player star
+  dragFrom:     null,    // id of star being dragged from
+  dragPos:      null,    // { x, y } current finger/cursor position during drag
+  aiTimer:      0,       // ms until next AI think
+  lastTime:     0,
+  tick:         0,
+  difficulty:   'normal',
+};
+
+let starfield   = [];
+let diffButtons = [];  // hit areas for start-screen buttons
+
+// ============================================================
+// CANVAS SETUP
+// ============================================================
+function resizeCanvas() {
+  dpr  = Math.min(window.devicePixelRatio || 1, 2);
+  logW = window.innerWidth;
+  logH = window.innerHeight;
+  canvas.width        = logW * dpr;
+  canvas.height       = logH * dpr;
+  canvas.style.width  = logW + 'px';
+  canvas.style.height = logH + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  buildStarfield();
+}
+
+function buildStarfield() {
+  starfield = [];
+  const n = Math.floor(logW * logH / 1800);
+  for (let i = 0; i < n; i++) {
+    starfield.push({
+      x: Math.random() * logW,
+      y: Math.random() * logH,
+      r: Math.random() * 1.4 + 0.3,
+      alpha: Math.random() * 0.55 + 0.15,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+// ============================================================
+// MAP GENERATION
+// ============================================================
+function tryPlaceStar(existing, margin) {
+  for (let attempt = 0; attempt < 250; attempt++) {
+    const r = Math.random() * (MAX_STAR_RADIUS - MIN_STAR_RADIUS) + MIN_STAR_RADIUS;
+    const x = margin + r + Math.random() * (logW - 2 * (r + margin));
+    const y = margin + r + Math.random() * (logH - 2 * (r + margin));
+    let ok = true;
+    for (const s of existing) {
+      if (Math.hypot(x - s.x, y - s.y) < s.radius + r + 28) { ok = false; break; }
+    }
+    if (ok) return { x, y, r };
+  }
+  return null;
+}
+
+function makeStar(id, x, y, radius, owner) {
+  return {
+    id,
+    x, y,
+    radius,
+    owner,
+    units:     Math.floor(radius * (owner === NEUTRAL_ID ? 0.7 : 1.5)),
+    regenRate: (radius / MAX_STAR_RADIUS) * STAR_BASE_REGEN,
+    maxUnits:  Math.floor(radius * 3.2),
+  };
+}
+
+function initGame(difficulty) {
+  const cfg = DIFFICULTY[difficulty];
+  state.difficulty  = difficulty;
+  state.stars       = [];
+  state.fleets      = [];
+  state.fleetCounter = 0;
+  state.selected    = null;
+  state.dragFrom    = null;
+  state.dragPos     = null;
+  state.aiTimer     = cfg.aiInterval;
+  state.lastTime    = 0;
+
+  // Place stars
+  const margin = 24;
+  for (let i = 0; i < cfg.stars; i++) {
+    const p = tryPlaceStar(state.stars, margin);
+    if (!p) continue;
+    state.stars.push(makeStar(state.stars.length, p.x, p.y, p.r, NEUTRAL_ID));
+  }
+
+  if (state.stars.length < 3) {
+    // Fallback: place guaranteed stars on a grid if random failed
+    state.stars = [];
+    const cols = 4, rows = 3;
+    for (let r = 0; r < rows && state.stars.length < cfg.stars; r++) {
+      for (let c = 0; c < cols && state.stars.length < cfg.stars; c++) {
+        const x = (logW / (cols + 1)) * (c + 1);
+        const y = (logH / (rows + 1)) * (r + 1);
+        const radius = MIN_STAR_RADIUS + Math.random() * (MAX_STAR_RADIUS - MIN_STAR_RADIUS);
+        state.stars.push(makeStar(state.stars.length, x, y, radius, NEUTRAL_ID));
+      }
+    }
+  }
+
+  // Assign player star: biggest on left third
+  const leftHalf = state.stars.filter(s => s.x < logW * 0.38);
+  const pStar = leftHalf.length
+    ? leftHalf.reduce((a, b) => a.radius > b.radius ? a : b)
+    : state.stars[0];
+  pStar.owner = PLAYER_ID;
+  pStar.units = Math.floor(pStar.radius * 1.5);
+
+  // Assign AI star: biggest on right third, not same as player
+  const rightHalf = state.stars.filter(s => s.x > logW * 0.62 && s !== pStar);
+  const aStar = rightHalf.length
+    ? rightHalf.reduce((a, b) => a.radius > b.radius ? a : b)
+    : state.stars.find(s => s !== pStar) || state.stars[state.stars.length - 1];
+  if (aStar && aStar !== pStar) {
+    aStar.owner = AI_ID;
+    aStar.units = Math.floor(aStar.radius * 1.5);
+  }
+
+  state.phase = 'PLAYING';
+}
+
+// ============================================================
+// GAME LOGIC
+// ============================================================
+function spawnFleet(owner, fromId, toId, units) {
+  const from = state.stars[fromId];
+  const to   = state.stars[toId];
+  if (!from || !to || units < 1) return;
+
+  const dotCount = Math.min(12, Math.max(3, Math.ceil(Math.log2(units + 1))));
+  const dots = [];
+  for (let i = 0; i < dotCount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const d = Math.random() * 9;
+    dots.push({ ox: Math.cos(a) * d, oy: Math.sin(a) * d, phase: Math.random() * Math.PI * 2 });
+  }
+
+  state.fleets.push({
+    id:       state.fleetCounter++,
+    owner,
+    fromStar: fromId,
+    toStar:   toId,
+    units,
+    x:        from.x,
+    y:        from.y,
+    progress: 0,
+    dots,
+  });
+}
+
+function playerSendFleet(fromId, toId) {
+  if (fromId === toId) return;
+  const from = state.stars[fromId];
+  if (!from || from.owner !== PLAYER_ID) return;
+  const units = Math.floor(from.units * FLEET_SEND_RATIO);
+  if (units < 1) return;
+  from.units -= units;
+  spawnFleet(PLAYER_ID, fromId, toId, units);
+}
+
+function landFleet(fleet) {
+  const target = state.stars[fleet.toStar];
+  if (!target) return;
+  if (target.owner === fleet.owner) {
+    target.units = Math.min(target.units + fleet.units, target.maxUnits);
+  } else {
+    target.units -= fleet.units;
+    if (target.units < 0) {
+      target.owner  = fleet.owner;
+      target.units  = Math.min(Math.abs(target.units), target.maxUnits);
+    }
+  }
+}
+
+function updateRegen(dt) {
+  for (const s of state.stars) {
+    if (s.owner !== NEUTRAL_ID) {
+      s.units = Math.min(s.units + s.regenRate * dt, s.maxUnits);
+    }
+  }
+}
+
+function updateFleets(dt) {
+  for (let i = state.fleets.length - 1; i >= 0; i--) {
+    const f    = state.fleets[i];
+    const from = state.stars[f.fromStar];
+    const to   = state.stars[f.toStar];
+    if (!from || !to) { state.fleets.splice(i, 1); continue; }
+
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    if (dist < 1) { landFleet(f); state.fleets.splice(i, 1); continue; }
+
+    f.progress += (UNIT_SPEED * dt) / dist;
+    if (f.progress >= 1) {
+      landFleet(f);
+      state.fleets.splice(i, 1);
+    } else {
+      f.x = from.x + (to.x - from.x) * f.progress;
+      f.y = from.y + (to.y - from.y) * f.progress;
+    }
+  }
+}
+
+function checkWinLose() {
+  const pStars  = state.stars.some(s => s.owner === PLAYER_ID);
+  const pFleets = state.fleets.some(f => f.owner === PLAYER_ID);
+  if (!pStars && !pFleets) { state.phase = 'LOSE'; return; }
+
+  if (state.stars.every(s => s.owner === PLAYER_ID)) { state.phase = 'WIN'; }
+}
+
+// ============================================================
+// AI
+// ============================================================
+function aiThink() {
+  const cfg    = DIFFICULTY[state.difficulty];
+  const myStars = state.stars.filter(s => s.owner === AI_ID);
+  if (!myStars.length) return;
+
+  // Defensive pass: reinforce besieged stars
+  for (const star of myStars) {
+    const incoming = state.fleets
+      .filter(f => f.toStar === star.id && f.owner !== AI_ID)
+      .reduce((sum, f) => sum + f.units, 0);
+    if (incoming > 0 && star.units < incoming * 1.3) {
+      const helper = myStars
+        .filter(s => s !== star && s.units > cfg.minSend * 2)
+        .sort((a, b) => Math.hypot(a.x - star.x, a.y - star.y) - Math.hypot(b.x - star.x, b.y - star.y))[0];
+      if (helper) {
+        const units = Math.floor(helper.units * 0.5);
+        helper.units -= units;
+        spawnFleet(AI_ID, helper.id, star.id, units);
+        return;
+      }
+    }
+  }
+
+  // Offensive pass: score and pick best attack
+  let best = null, bestScore = -Infinity;
+  for (const src of myStars) {
+    if (src.units < cfg.minSend) continue;
+    for (const tgt of state.stars) {
+      if (tgt.owner === AI_ID) continue;
+      const power = src.units / Math.max(tgt.units + 1, 1);
+      if (power < cfg.attackThreshold) continue;
+      const dist  = Math.hypot(src.x - tgt.x, src.y - tgt.y);
+      const score = power
+        + (tgt.radius / MAX_STAR_RADIUS) * 1.8
+        - dist * 0.0008
+        + (tgt.owner === PLAYER_ID ? cfg.aggression : 0);
+      if (score > bestScore) { bestScore = score; best = { src, tgt }; }
+    }
+  }
+
+  if (best) {
+    const units = Math.floor(best.src.units * cfg.sendRatio);
+    best.src.units -= units;
+    spawnFleet(AI_ID, best.src.id, best.tgt.id, units);
+  }
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+function bindInput() {
+  canvas.addEventListener('touchstart',  onDown, { passive: false });
+  canvas.addEventListener('touchmove',   onMove, { passive: false });
+  canvas.addEventListener('touchend',    onUp,   { passive: false });
+  canvas.addEventListener('touchcancel', onUp,   { passive: false });
+  canvas.addEventListener('mousedown',   onDown);
+  canvas.addEventListener('mousemove',   onMove);
+  canvas.addEventListener('mouseup',     onUp);
+}
+
+function ptFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  const src  = e.touches ? (e.touches[0] || e.changedTouches[0]) : e;
+  return {
+    x: (src.clientX - rect.left) * (logW / rect.width),
+    y: (src.clientY - rect.top)  * (logH / rect.height),
+  };
+}
+
+function starAt(x, y) {
+  for (const s of state.stars) {
+    if (Math.hypot(x - s.x, y - s.y) < s.radius + 10) return s;
+  }
+  return null;
+}
+
+function onDown(e) {
+  e.preventDefault();
+  const pt = ptFromEvent(e);
+
+  if (state.phase === 'WIN' || state.phase === 'LOSE') {
+    state.phase = 'START';
+    return;
+  }
+
+  if (state.phase === 'START') {
+    for (const btn of diffButtons) {
+      if (pt.x >= btn.x && pt.x <= btn.x + btn.w &&
+          pt.y >= btn.y && pt.y <= btn.y + btn.h) {
+        initGame(btn.diff);
+        return;
+      }
+    }
+    return;
+  }
+
+  if (state.phase === 'PLAYING') {
+    const s = starAt(pt.x, pt.y);
+    if (s && s.owner === PLAYER_ID) {
+      state.dragFrom = s.id;
+      state.dragPos  = pt;
+    }
+  }
+}
+
+function onMove(e) {
+  e.preventDefault();
+  if (state.phase !== 'PLAYING' || state.dragFrom === null) return;
+  state.dragPos = ptFromEvent(e);
+}
+
+function onUp(e) {
+  e.preventDefault();
+  if (state.phase !== 'PLAYING') {
+    state.dragFrom = null;
+    state.dragPos  = null;
+    return;
+  }
+
+  const pt     = ptFromEvent(e);
+  const target = starAt(pt.x, pt.y);
+  const fromId = state.dragFrom;
+
+  state.dragFrom = null;
+  state.dragPos  = null;
+
+  if (fromId !== null) {
+    // --- drag gesture ended ---
+    if (target && target.id !== fromId) {
+      // drag to a different star → send fleet
+      playerSendFleet(fromId, target.id);
+      state.selected = null;
+    } else if (!target) {
+      // drag released on empty space → deselect
+      state.selected = null;
+    } else {
+      // released on same star → toggle selection
+      state.selected = (state.selected === fromId) ? null : fromId;
+    }
+  } else {
+    // --- pure tap ---
+    if (!target) {
+      state.selected = null;
+    } else if (target.owner === PLAYER_ID) {
+      state.selected = (state.selected === target.id) ? null : target.id;
+    } else if (state.selected !== null) {
+      playerSendFleet(state.selected, target.id);
+      state.selected = null;
+    }
+  }
+}
+
+// ============================================================
+// RENDERING
+// ============================================================
+function render(ts) {
+  ctx.clearRect(0, 0, logW, logH);
+  drawBg(ts);
+
+  if (state.phase === 'START') {
+    drawStartScreen(ts);
+    return;
+  }
+
+  drawTrajectories();
+  drawDragLine();
+  drawFleets(ts);
+  drawStars(ts);
+  drawHUD();
+
+  if (state.phase === 'WIN')  drawEndScreen(true);
+  if (state.phase === 'LOSE') drawEndScreen(false);
+}
+
+function drawBg(ts) {
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(0, 0, logW, logH);
+  for (const dot of starfield) {
+    const twinkle = 0.65 + 0.35 * Math.sin(ts * 0.00085 + dot.phase);
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,210,255,${dot.alpha * twinkle})`;
+    ctx.fill();
+  }
+}
+
+function drawTrajectories() {
+  const selId = state.dragFrom ?? state.selected;
+  if (selId === null) return;
+  const sel = state.stars[selId];
+  if (!sel) return;
+
+  ctx.save();
+  ctx.setLineDash([5, 9]);
+  ctx.lineWidth = 1;
+  for (const s of state.stars) {
+    if (s.id === selId) continue;
+    ctx.strokeStyle = s.owner === AI_ID
+      ? 'rgba(239,83,80,0.3)'
+      : 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(sel.x, sel.y);
+    ctx.lineTo(s.x, s.y);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawDragLine() {
+  if (state.dragFrom === null || !state.dragPos) return;
+  const from   = state.stars[state.dragFrom];
+  if (!from) return;
+  const target = starAt(state.dragPos.x, state.dragPos.y);
+  const tx     = target ? target.x : state.dragPos.x;
+  const ty     = target ? target.y : state.dragPos.y;
+  const angle  = Math.atan2(ty - from.y, tx - from.x);
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(79,195,247,0.7)';
+  ctx.lineWidth   = 2;
+  ctx.setLineDash([6, 8]);
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // arrowhead
+  const tipR = target ? target.radius + 6 : 0;
+  const ax   = tx - Math.cos(angle) * tipR;
+  const ay   = ty - Math.sin(angle) * tipR;
+  ctx.fillStyle = 'rgba(79,195,247,0.85)';
+  ctx.translate(ax, ay);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-12, -5);
+  ctx.lineTo(-12, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawStars(ts) {
+  const sorted = [...state.stars].sort((a, b) => b.radius - a.radius);
+  for (const s of sorted) {
+    const col    = COLORS[s.owner];
+    const isNeutral = s.owner === NEUTRAL_ID;
+    const isSel  = s.id === state.selected || s.id === state.dragFrom;
+
+    // glow halo
+    ctx.save();
+    ctx.shadowBlur  = isNeutral ? 10 : 22;
+    ctx.shadowColor = col;
+
+    // radial gradient fill
+    const g = ctx.createRadialGradient(
+      s.x - s.radius * 0.28, s.y - s.radius * 0.28, 0,
+      s.x, s.y, s.radius
+    );
+    if (isNeutral) {
+      g.addColorStop(0, '#888899');
+      g.addColorStop(1, '#2a2a3a');
+    } else if (s.owner === PLAYER_ID) {
+      g.addColorStop(0, '#90e0ff');
+      g.addColorStop(1, '#0277bd');
+    } else {
+      g.addColorStop(0, '#ff9090');
+      g.addColorStop(1, '#b71c1c');
+    }
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+
+    // selection / drag pulse ring
+    if (isSel) {
+      const pulse = 0.5 + 0.5 * Math.sin(ts * 0.001 * GLOW_PULSE_SPEED * Math.PI * 2);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.radius + 5 + 4 * pulse, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(79,195,247,${0.4 + 0.6 * pulse})`;
+      ctx.lineWidth   = 2.5;
+      ctx.shadowBlur  = 18;
+      ctx.shadowColor = '#4fc3f7';
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // unit count label
+    ctx.save();
+    ctx.font         = `bold ${Math.round(s.radius * 0.54)}px system-ui,sans-serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowBlur   = 5;
+    ctx.shadowColor  = 'rgba(0,0,0,0.9)';
+    ctx.fillStyle    = '#fff';
+    ctx.fillText(Math.floor(s.units), s.x, s.y);
+    ctx.restore();
+  }
+}
+
+function drawFleets(ts) {
+  for (const f of state.fleets) {
+    const from = state.stars[f.fromStar];
+    const to   = state.stars[f.toStar];
+    if (!from || !to) continue;
+
+    const col   = COLORS[f.owner];
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+
+    ctx.save();
+    ctx.shadowBlur  = 9;
+    ctx.shadowColor = col;
+    ctx.fillStyle   = col;
+
+    for (const d of f.dots) {
+      const wobX = Math.sin(ts * 0.003 + d.phase) * 2.2;
+      const wobY = Math.cos(ts * 0.003 + d.phase) * 2.2;
+      const px   = f.x + (-Math.sin(angle) * d.oy) + Math.cos(angle) * d.ox + wobX;
+      const py   = f.y + ( Math.cos(angle) * d.oy) + Math.sin(angle) * d.ox + wobY;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // fleet unit count
+    if (f.units >= 4) {
+      const lx = f.x - Math.sin(angle) * 15;
+      const ly = f.y + Math.cos(angle) * 15;
+      ctx.save();
+      ctx.font         = 'bold 10px system-ui,sans-serif';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle    = col;
+      ctx.shadowBlur   = 5;
+      ctx.shadowColor  = 'rgba(0,0,0,0.95)';
+      ctx.fillText(f.units, lx, ly);
+      ctx.restore();
+    }
+  }
+}
+
+function drawHUD() {
+  const total  = state.stars.length;
+  const pCount = state.stars.filter(s => s.owner === PLAYER_ID).length;
+  const aCount = state.stars.filter(s => s.owner === AI_ID).length;
+
+  ctx.save();
+  ctx.font         = 'bold 14px system-ui,sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.shadowBlur   = 6;
+  ctx.shadowColor  = 'rgba(0,0,0,0.85)';
+
+  // player side (top-left)
+  ctx.fillStyle = COLORS[PLAYER_ID];
+  ctx.beginPath();
+  ctx.arc(14, 15, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillText(`${pCount} / ${total}`, 26, 9);
+
+  // AI side (top-right)
+  ctx.textAlign = 'right';
+  ctx.fillStyle = COLORS[AI_ID];
+  ctx.beginPath();
+  ctx.arc(logW - 14, 15, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillText(`${aCount} / ${total}`, logW - 26, 9);
+
+  ctx.restore();
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawStartScreen(ts) {
+  const cx = logW / 2;
+  const cy = logH / 2;
+
+  // dim overlay (stars still visible through it)
+  ctx.fillStyle = 'rgba(13,13,26,0.78)';
+  ctx.fillRect(0, 0, logW, logH);
+
+  // title
+  ctx.save();
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  const titleSize  = Math.min(54, logW * 0.11);
+  ctx.font         = `bold ${titleSize}px system-ui,sans-serif`;
+  ctx.shadowBlur   = 35;
+  ctx.shadowColor  = '#4fc3f7';
+  ctx.fillStyle    = '#4fc3f7';
+  ctx.fillText('STARS BATTLE', cx, cy - 120);
+
+  // subtitle
+  ctx.font        = `${Math.min(17, logW * 0.038)}px system-ui,sans-serif`;
+  ctx.fillStyle   = 'rgba(200,230,255,0.5)';
+  ctx.shadowBlur  = 0;
+  ctx.fillText('CONQUER THE GALAXY', cx, cy - 74);
+  ctx.restore();
+
+  // difficulty buttons
+  const btnW   = Math.min(130, logW * 0.28);
+  const btnH   = 50;
+  const gap    = 14;
+  const totalW = btnW * 3 + gap * 2;
+  const bx0    = cx - totalW / 2;
+  const by     = cy - 12;
+
+  const diffs = [
+    { label: 'EASY',   diff: 'easy',   col: '#66bb6a' },
+    { label: 'NORMAL', diff: 'normal', col: '#4fc3f7' },
+    { label: 'HARD',   diff: 'hard',   col: '#ef5350' },
+  ];
+  diffButtons = [];
+
+  for (let i = 0; i < 3; i++) {
+    const d  = diffs[i];
+    const bx = bx0 + i * (btnW + gap);
+
+    ctx.save();
+    ctx.shadowBlur  = 16;
+    ctx.shadowColor = d.col;
+
+    // border
+    ctx.strokeStyle = d.col;
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    roundRect(bx, by, btnW, btnH, 9);
+    ctx.stroke();
+
+    // fill
+    ctx.fillStyle = d.col + '22';
+    ctx.beginPath();
+    roundRect(bx, by, btnW, btnH, 9);
+    ctx.fill();
+
+    // label
+    ctx.fillStyle    = d.col;
+    ctx.font         = `bold ${Math.min(15, logW * 0.033)}px system-ui,sans-serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.label, bx + btnW / 2, by + btnH / 2);
+    ctx.restore();
+
+    diffButtons.push({ x: bx, y: by, w: btnW, h: btnH, diff: d.diff });
+  }
+
+  // hint text
+  ctx.save();
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle    = 'rgba(255,255,255,0.28)';
+  ctx.font         = `${Math.min(12, logW * 0.028)}px system-ui,sans-serif`;
+  ctx.fillText('Tap a star to select · tap again to attack · or drag', cx, by + btnH + 36);
+  ctx.restore();
+}
+
+function drawEndScreen(win) {
+  const cx = logW / 2;
+  const cy = logH / 2;
+
+  ctx.fillStyle = win ? 'rgba(0,30,70,0.88)' : 'rgba(50,0,0,0.88)';
+  ctx.fillRect(0, 0, logW, logH);
+
+  ctx.save();
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowBlur   = 45;
+  ctx.shadowColor  = win ? '#4fc3f7' : '#ef5350';
+  ctx.fillStyle    = win ? '#4fc3f7' : '#ef5350';
+  ctx.font         = `bold ${Math.min(64, logW * 0.14)}px system-ui,sans-serif`;
+  ctx.fillText(win ? 'VICTORY' : 'DEFEATED', cx, cy - 28);
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle  = 'rgba(255,255,255,0.42)';
+  ctx.font       = `${Math.min(16, logW * 0.036)}px system-ui,sans-serif`;
+  ctx.fillText('TAP TO PLAY AGAIN', cx, cy + 44);
+  ctx.restore();
+}
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+function update(dt) {
+  updateRegen(dt);
+  updateFleets(dt);
+
+  state.aiTimer -= dt * 1000;
+  if (state.aiTimer <= 0) {
+    aiThink();
+    state.aiTimer = DIFFICULTY[state.difficulty].aiInterval;
+  }
+
+  checkWinLose();
+}
+
+function gameLoop(ts) {
+  if (state.lastTime === 0) state.lastTime = ts;
+  const dt      = Math.min((ts - state.lastTime) / 1000, 0.1);
+  state.lastTime = ts;
+  state.tick     = ts;
+
+  if (state.phase === 'PLAYING') update(dt);
+  render(ts);
+  requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+bindInput();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
