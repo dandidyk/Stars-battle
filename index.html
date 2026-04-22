@@ -22,12 +22,20 @@ const NEUTRAL_ID = -1;
 
 const COLORS = { [NEUTRAL_ID]: '#555566', [PLAYER_ID]: '#4fc3f7', [AI_ID]: '#ef5350' };
 
-const UNIT_SPEED       = 130; // px/sec
-const FLEET_SEND_RATIO = 0.5;
-const MIN_STAR_RADIUS  = 20;
-const MAX_STAR_RADIUS  = 44;
-const STAR_BASE_REGEN  = 1.0; // units/sec at max radius
-const GLOW_PULSE_SPEED = 2.2; // Hz
+const SHIP_SPEED        = 130;          // px/sec
+const ROUTE_DISPATCH_MS = 900;          // ms between ship dispatches per route
+const COMBAT_RANGE_MULT = 2.2;          // combat zone = star.radius * this
+const ORBIT_RADIUS_MULT = 1.38;         // orbit ring = star.radius * this
+const MAX_ORBIT_SHIPS   = 15;
+const CLUSTER_SPAN      = Math.PI * 0.6;
+const UPGRADE_COSTS     = [12, 22, 35]; // cost for upgrade levels 1, 2, 3
+const SWIPE_MIN_LEN     = 38;           // px minimum to count as swipe-cut
+const TAP_MAX_MOVE      = 14;           // px max travel to count as tap
+const TAP_MAX_MS        = 280;          // ms max duration to count as tap
+const MIN_STAR_RADIUS   = 20;
+const MAX_STAR_RADIUS   = 44;
+const STAR_BASE_REGEN   = 1.0;
+const MAX_AI_ROUTES     = 6;
 
 const DIFFICULTY = {
   easy:   { stars: 8,  aiInterval: 2200, attackThreshold: 1.5, minSend: 18, aggression: 0.3, sendRatio: 0.5 },
@@ -45,12 +53,15 @@ let logW, logH, dpr;
 let state = {
   phase:        'START',  // START | PLAYING | WIN | LOSE
   stars:        [],
-  fleets:       [],
-  fleetCounter: 0,
-  selected:     null,    // id of selected player star
-  dragFrom:     null,    // id of star being dragged from
-  dragPos:      null,    // { x, y } current finger/cursor position during drag
-  aiTimer:      0,       // ms until next AI think
+  routes:       [],       // persistent channels between stars
+  ships:        [],       // individual ships in flight
+  routeCounter: 0,
+  shipCounter:  0,
+  upgradePanel: null,     // starId of open upgrade panel, or null
+  pointerDown:  null,     // { x, y, time, startedOnStar: id|null }
+  dragFrom:     null,
+  dragPos:      null,
+  aiTimer:      0,
   lastTime:     0,
   tick:         0,
   difficulty:   'normal',
@@ -114,6 +125,10 @@ function makeStar(id, x, y, radius, owner) {
     units:     Math.floor(radius * (owner === NEUTRAL_ID ? 0.7 : 1.5)),
     regenRate: (radius / MAX_STAR_RADIUS) * STAR_BASE_REGEN,
     maxUnits:  Math.floor(radius * 3.2),
+    atkLevel:  0,
+    defLevel:  0,
+    rotation:  Math.random() * Math.PI * 2,
+    rotSpeed:  (Math.random() * 0.3 + 0.08) * (Math.random() < 0.5 ? 1 : -1),
   };
 }
 
@@ -121,9 +136,12 @@ function initGame(difficulty) {
   const cfg = DIFFICULTY[difficulty];
   state.difficulty  = difficulty;
   state.stars       = [];
-  state.fleets      = [];
-  state.fleetCounter = 0;
-  state.selected    = null;
+  state.routes      = [];
+  state.ships       = [];
+  state.routeCounter = 0;
+  state.shipCounter  = 0;
+  state.upgradePanel = null;
+  state.pointerDown  = null;
   state.dragFrom    = null;
   state.dragPos     = null;
   state.aiTimer     = cfg.aiInterval;
