@@ -621,9 +621,10 @@ function render(ts) {
     return;
   }
 
-  drawTrajectories();
+  drawRoutes();
+  drawCutGesture();
   drawDragLine();
-  drawFleets(ts);
+  drawShips();
   drawStars(ts);
   drawHUD();
 
@@ -640,6 +641,78 @@ function drawBg(ts) {
     ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(200,210,255,${dot.alpha * twinkle})`;
     ctx.fill();
+  }
+}
+
+function drawRoutes() {
+  for (const route of state.routes) {
+    if (route._dead) continue;
+    const src = state.stars[route.fromStar];
+    const tgt = state.stars[route.toStar];
+    if (!src || !tgt) continue;
+
+    const col   = COLORS[route.owner];
+    const alpha = route.owner === PLAYER_ID ? 0.6 : 0.35;
+    const r = parseInt(col.slice(1,3),16), g = parseInt(col.slice(3,5),16), b = parseInt(col.slice(5,7),16);
+
+    ctx.save();
+    ctx.strokeStyle    = `rgba(${r},${g},${b},${alpha})`;
+    ctx.lineWidth      = route.owner === PLAYER_ID ? 1.8 : 1.2;
+    ctx.shadowBlur     = 5;
+    ctx.shadowColor    = col;
+    ctx.setLineDash([7, 9]);
+    ctx.lineDashOffset = -route.dashOffset;
+    ctx.beginPath();
+    ctx.moveTo(src.x, src.y);
+    ctx.lineTo(tgt.x, tgt.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrowhead at target
+    const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
+    const ax = tgt.x - Math.cos(angle) * (tgt.radius + 5);
+    const ay = tgt.y - Math.sin(angle) * (tgt.radius + 5);
+    ctx.translate(ax, ay);
+    ctx.rotate(angle);
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha + 0.2})`;
+    ctx.beginPath();
+    ctx.moveTo(7, 0); ctx.lineTo(-5, -3.5); ctx.lineTo(-5, 3.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawCutGesture() {
+  if (!state.pointerDown || state.dragFrom !== null || !state.dragPos) return;
+  const travel = Math.hypot(state.dragPos.x - state.pointerDown.x, state.dragPos.y - state.pointerDown.y);
+  if (travel < 12) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,220,80,0.6)';
+  ctx.lineWidth   = 2;
+  ctx.setLineDash([4, 7]);
+  ctx.beginPath();
+  ctx.moveTo(state.pointerDown.x, state.pointerDown.y);
+  ctx.lineTo(state.dragPos.x, state.dragPos.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawShips() {
+  for (const ship of state.ships) {
+    const col = COLORS[ship.owner];
+    ctx.save();
+    ctx.translate(ship.x, ship.y);
+    ctx.rotate(ship.angle);
+    ctx.shadowBlur  = 9;
+    ctx.shadowColor = col;
+    ctx.fillStyle   = col;
+    ctx.beginPath();
+    ctx.moveTo(7, 0); ctx.lineTo(-4.5, -3.5); ctx.lineTo(-4.5, 3.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -1003,7 +1076,8 @@ function drawEndScreen(win) {
 // ============================================================
 function update(dt) {
   updateRegen(dt);
-  updateFleets(dt);
+  updateRoutes(dt);
+  updateShips(dt);
 
   state.aiTimer -= dt * 1000;
   if (state.aiTimer <= 0) {
