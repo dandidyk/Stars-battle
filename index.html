@@ -380,6 +380,7 @@ function updateRegen(dt) {
   for (const s of state.stars) {
     if (s.owner !== NEUTRAL_ID) {
       s.units = Math.min(s.units + s.regenRate * dt, s.maxUnits);
+      s.rotation += s.rotSpeed * dt;
     }
   }
 }
@@ -700,60 +701,107 @@ function drawDragLine() {
   ctx.restore();
 }
 
+function drawStarPoly(cx, cy, outerR, innerR, points, rotation) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const a = rotation + (i * Math.PI) / points - Math.PI / 2;
+    i === 0 ? ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+            : ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  ctx.closePath();
+}
+
+function getThreatAngle(star) {
+  const range = star.radius * COMBAT_RANGE_MULT * 2;
+  let best = Infinity, angle = null;
+  for (const ship of state.ships) {
+    if (ship.owner === star.owner || ship.toStar !== star.id) continue;
+    const d = Math.hypot(ship.x - star.x, ship.y - star.y);
+    if (d <= range && d < best) { best = d; angle = Math.atan2(ship.y - star.y, ship.x - star.x); }
+  }
+  return angle;
+}
+
 function drawStars(ts) {
   const sorted = [...state.stars].sort((a, b) => b.radius - a.radius);
   for (const s of sorted) {
-    const col    = COLORS[s.owner];
+    const col       = COLORS[s.owner];
     const isNeutral = s.owner === NEUTRAL_ID;
-    const isSel  = s.id === state.selected || s.id === state.dragFrom;
+    const points    = isNeutral ? 6 : 8;
+    const innerR    = s.radius * (isNeutral ? 0.52 : 0.44);
 
-    // glow halo
-    ctx.save();
-    ctx.shadowBlur  = isNeutral ? 10 : 22;
-    ctx.shadowColor = col;
-
-    // radial gradient fill
-    const g = ctx.createRadialGradient(
-      s.x - s.radius * 0.28, s.y - s.radius * 0.28, 0,
-      s.x, s.y, s.radius
-    );
-    if (isNeutral) {
-      g.addColorStop(0, '#888899');
-      g.addColorStop(1, '#2a2a3a');
-    } else if (s.owner === PLAYER_ID) {
-      g.addColorStop(0, '#90e0ff');
-      g.addColorStop(1, '#0277bd');
-    } else {
-      g.addColorStop(0, '#ff9090');
-      g.addColorStop(1, '#b71c1c');
-    }
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-    ctx.fillStyle = g;
-    ctx.fill();
-    ctx.restore();
-
-    // selection / drag pulse ring
-    if (isSel) {
-      const pulse = 0.5 + 0.5 * Math.sin(ts * 0.001 * GLOW_PULSE_SPEED * Math.PI * 2);
+    // Soft ambient glow layers
+    if (!isNeutral) {
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.radius + 5 + 4 * pulse, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(79,195,247,${0.4 + 0.6 * pulse})`;
-      ctx.lineWidth   = 2.5;
-      ctx.shadowBlur  = 18;
-      ctx.shadowColor = '#4fc3f7';
-      ctx.stroke();
+      for (let layer = 3; layer >= 1; layer--) {
+        ctx.globalAlpha = 0.07 / layer;
+        ctx.fillStyle   = col;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.radius * (1.3 + 0.35 * layer), 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     }
 
-    // unit count label
+    // Star body
     ctx.save();
-    ctx.font         = `bold ${Math.round(s.radius * 0.54)}px system-ui,sans-serif`;
+    ctx.shadowBlur  = isNeutral ? 12 : 30;
+    ctx.shadowColor = col;
+    const g = ctx.createRadialGradient(s.x - s.radius * 0.25, s.y - s.radius * 0.25, 0, s.x, s.y, s.radius);
+    if (isNeutral) {
+      g.addColorStop(0, '#aabbcc'); g.addColorStop(0.5, '#445566'); g.addColorStop(1, '#1a2233');
+    } else if (s.owner === PLAYER_ID) {
+      g.addColorStop(0, '#ccf2ff'); g.addColorStop(0.4, '#4fc3f7'); g.addColorStop(1, '#01579b');
+    } else {
+      g.addColorStop(0, '#ffccbb'); g.addColorStop(0.4, '#ef5350'); g.addColorStop(1, '#7f0000');
+    }
+    drawStarPoly(s.x, s.y, s.radius, innerR, points, s.rotation);
+    ctx.fillStyle = g;
+    ctx.fill();
+    drawStarPoly(s.x, s.y, s.radius, innerR, points, s.rotation);
+    ctx.strokeStyle = col + 'cc';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // Orbiting ships
+    const count    = Math.min(Math.floor(s.units), MAX_ORBIT_SHIPS);
+    const orbitR   = s.radius * ORBIT_RADIUS_MULT;
+    const threat   = getThreatAngle(s);
+    const baseAngle = (ts * 0.00028) + s.id * 0.73;
+    if (count > 0 && !isNeutral) {
+      for (let i = 0; i < count; i++) {
+        let angle;
+        if (threat !== null) {
+          const t = count === 1 ? 0.5 : i / (count - 1);
+          angle   = threat - CLUSTER_SPAN / 2 + t * CLUSTER_SPAN;
+        } else {
+          angle = baseAngle + (i / count) * Math.PI * 2;
+        }
+        const ox = s.x + Math.cos(angle) * orbitR;
+        const oy = s.y + Math.sin(angle) * orbitR;
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.rotate(angle + Math.PI / 2);
+        ctx.shadowBlur  = 6;
+        ctx.shadowColor = col;
+        ctx.fillStyle   = col;
+        ctx.beginPath();
+        ctx.moveTo(0, -3.5); ctx.lineTo(2.5, 2.5); ctx.lineTo(-2.5, 2.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Unit count
+    ctx.save();
+    ctx.font         = `bold ${Math.round(s.radius * 0.5)}px system-ui,sans-serif`;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.shadowBlur   = 5;
-    ctx.shadowColor  = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur   = 6;
+    ctx.shadowColor  = 'rgba(0,0,0,0.95)';
     ctx.fillStyle    = '#fff';
     ctx.fillText(Math.floor(s.units), s.x, s.y);
     ctx.restore();
