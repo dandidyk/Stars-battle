@@ -191,6 +191,56 @@ function initGame(difficulty) {
 }
 
 // ============================================================
+// ROUTES
+// ============================================================
+function createRoute(owner, fromId, toId) {
+  if (fromId === toId) return;
+  const from = state.stars[fromId];
+  if (!from || from.owner !== owner) return;
+  // No duplicate routes for same owner+pair
+  if (state.routes.some(r => r.owner === owner && r.fromStar === fromId && r.toStar === toId)) return;
+  state.routes.push({
+    id:            state.routeCounter++,
+    owner,
+    fromStar:      fromId,
+    toStar:        toId,
+    dispatchTimer: 0,
+    dashOffset:    0,
+    _dead:         false,
+  });
+}
+
+function deleteRoute(id) {
+  const r = state.routes.find(r => r.id === id);
+  if (r) r._dead = true;
+}
+
+function updateRoutes(dt) {
+  const dashCycle = 16;
+  for (const route of state.routes) {
+    if (route._dead) continue;
+    const src = state.stars[route.fromStar];
+    const tgt = state.stars[route.toStar];
+    // Auto-clean: source no longer belongs to this route's owner
+    if (!src || src.owner !== route.owner) { route._dead = true; continue; }
+    // Auto-clean: target already captured by route owner
+    if (tgt && tgt.owner === route.owner) { route._dead = true; continue; }
+    // Animate dash flow toward target
+    route.dashOffset = (route.dashOffset + 45 * dt) % dashCycle;
+    // Dispatch one ship at interval
+    route.dispatchTimer -= dt * 1000;
+    if (route.dispatchTimer <= 0) {
+      route.dispatchTimer += ROUTE_DISPATCH_MS;
+      if (src.units > 1.5) {
+        src.units -= 1;
+        spawnShip(route.owner, route.fromStar, route.toStar);
+      }
+    }
+  }
+  state.routes = state.routes.filter(r => !r._dead);
+}
+
+// ============================================================
 // GAME LOGIC
 // ============================================================
 function spawnFleet(owner, fromId, toId, units) {
