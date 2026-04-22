@@ -626,6 +626,7 @@ function render(ts) {
   drawDragLine();
   drawShips();
   drawStars(ts);
+  if (state.upgradePanel !== null) drawUpgradePanel(state.upgradePanel);
   drawHUD();
 
   if (state.phase === 'WIN')  drawEndScreen(true);
@@ -838,6 +839,9 @@ function drawStars(ts) {
     ctx.stroke();
     ctx.restore();
 
+    // Upgrade dots
+    if (s.owner === PLAYER_ID && (s.atkLevel > 0 || s.defLevel > 0)) drawUpgradeDots(s);
+
     // Orbiting ships
     const count    = Math.min(Math.floor(s.units), MAX_ORBIT_SHIPS);
     const orbitR   = s.radius * ORBIT_RADIUS_MULT;
@@ -921,6 +925,82 @@ function drawFleets(ts) {
       ctx.restore();
     }
   }
+}
+
+function drawUpgradeDots(s) {
+  const dotR = 3.2, gap = 8;
+  ctx.save();
+  for (let i = 0; i < s.atkLevel; i++) {
+    const dx = (i - (s.atkLevel - 1) / 2) * gap;
+    ctx.beginPath();
+    ctx.arc(s.x + dx, s.y - s.radius - 9, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = '#42a5f5'; ctx.shadowBlur = 8; ctx.shadowColor = '#42a5f5';
+    ctx.fill();
+  }
+  for (let i = 0; i < s.defLevel; i++) {
+    const dx = (i - (s.defLevel - 1) / 2) * gap;
+    ctx.beginPath();
+    ctx.arc(s.x + dx, s.y + s.radius + 9, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffd54f'; ctx.shadowBlur = 8; ctx.shadowColor = '#ffd54f';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawUpgradeBtn(x, y, w, h, label, level, cost, canAfford, maxed, col) {
+  ctx.save();
+  ctx.shadowBlur  = canAfford ? 10 : 0;
+  ctx.shadowColor = col;
+  ctx.fillStyle   = canAfford ? col + '28' : 'rgba(20,20,40,0.7)';
+  ctx.strokeStyle = canAfford ? col : '#333';
+  ctx.lineWidth   = 1;
+  ctx.beginPath(); roundRect(x, y, w, h, 5); ctx.fill(); ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle  = canAfford ? col : '#555';
+  ctx.font       = `bold 10px system-ui,sans-serif`;
+  ctx.textAlign  = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText(maxed ? `${label} MAX` : `${label} L${level + 1}`, x + w / 2, y + 6);
+  if (!maxed) {
+    ctx.fillStyle = canAfford ? '#ddd' : '#444';
+    ctx.font      = '9px system-ui,sans-serif';
+    ctx.fillText(`${cost} units`, x + w / 2, y + 20);
+  }
+  // Level pips
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.arc(x + w / 2 - 9 + i * 9, y + h - 9, 3, 0, Math.PI * 2);
+    ctx.fillStyle = i < level ? col : '#333';
+    if (i < level) { ctx.shadowBlur = 5; ctx.shadowColor = col; }
+    ctx.fill(); ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+}
+
+function drawUpgradePanel(starId) {
+  const s = state.stars[starId];
+  if (!s || s.owner !== PLAYER_ID) return;
+  const pw = 116, ph = 58, br = 8;
+  const px = Math.max(4, Math.min(logW - pw - 4, s.x - pw / 2));
+  const py = Math.max(4, Math.min(logH - ph - 4, s.y + s.radius + 10));
+
+  ctx.save();
+  ctx.fillStyle   = 'rgba(8,10,28,0.92)';
+  ctx.strokeStyle = COLORS[PLAYER_ID];
+  ctx.lineWidth   = 1.5;
+  ctx.shadowBlur  = 12; ctx.shadowColor = COLORS[PLAYER_ID];
+  ctx.beginPath(); roundRect(px, py, pw, ph, br); ctx.fill(); ctx.stroke();
+  ctx.restore();
+
+  const atkMaxed = s.atkLevel >= 3;
+  const atkCost  = !atkMaxed ? UPGRADE_COSTS[s.atkLevel] : null;
+  drawUpgradeBtn(px + 2, py + 3, 54, ph - 6, '⚔ ATK', s.atkLevel, atkCost,
+    !atkMaxed && s.units >= atkCost + 1, atkMaxed, '#42a5f5');
+
+  const defMaxed = s.defLevel >= 3;
+  const defCost  = !defMaxed ? UPGRADE_COSTS[s.defLevel] : null;
+  drawUpgradeBtn(px + 60, py + 3, 54, ph - 6, '🛡 DEF', s.defLevel, defCost,
+    !defMaxed && s.units >= defCost + 1, defMaxed, '#ffd54f');
 }
 
 function drawHUD() {
