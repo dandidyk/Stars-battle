@@ -420,34 +420,43 @@ function checkWinLose() {
 // AI
 // ============================================================
 function aiThink() {
-  const cfg    = DIFFICULTY[state.difficulty];
+  const cfg     = DIFFICULTY[state.difficulty];
   const myStars = state.stars.filter(s => s.owner === AI_ID);
   if (!myStars.length) return;
 
-  // Defensive pass: reinforce besieged stars
+  // Clean up stale routes (lost source or already captured target)
+  for (const r of state.routes) {
+    if (r.owner !== AI_ID || r._dead) continue;
+    const src = state.stars[r.fromStar];
+    const tgt = state.stars[r.toStar];
+    if (!src || src.owner !== AI_ID) { r._dead = true; continue; }
+    if (tgt && tgt.owner === AI_ID)  { r._dead = true; }
+  }
+
+  // Cap total AI routes
+  const activeAiRoutes = state.routes.filter(r => r.owner === AI_ID && !r._dead);
+  if (activeAiRoutes.length >= MAX_AI_ROUTES) return;
+
+  // Defensive: reinforce a star under attack
   for (const star of myStars) {
-    const incoming = state.fleets
-      .filter(f => f.toStar === star.id && f.owner !== AI_ID)
-      .reduce((sum, f) => sum + f.units, 0);
-    if (incoming > 0 && star.units < incoming * 1.3) {
-      const helper = myStars
-        .filter(s => s !== star && s.units > cfg.minSend * 2)
-        .sort((a, b) => Math.hypot(a.x - star.x, a.y - star.y) - Math.hypot(b.x - star.x, b.y - star.y))[0];
-      if (helper) {
-        const units = Math.floor(helper.units * 0.5);
-        helper.units -= units;
-        spawnFleet(AI_ID, helper.id, star.id, units);
-        return;
-      }
+    const underAttack = state.ships.some(s => s.owner !== AI_ID && s.toStar === star.id);
+    if (!underAttack) continue;
+    const helper = myStars
+      .filter(s => s !== star && s.units > cfg.minSend * 2)
+      .sort((a, b) => Math.hypot(a.x - star.x, a.y - star.y) - Math.hypot(b.x - star.x, b.y - star.y))[0];
+    if (helper && !state.routes.some(r => r.owner === AI_ID && r.fromStar === helper.id && r.toStar === star.id)) {
+      createRoute(AI_ID, helper.id, star.id);
+      return;
     }
   }
 
-  // Offensive pass: score and pick best attack
+  // Offensive: score targets and create best route
   let best = null, bestScore = -Infinity;
   for (const src of myStars) {
     if (src.units < cfg.minSend) continue;
     for (const tgt of state.stars) {
       if (tgt.owner === AI_ID) continue;
+      if (state.routes.some(r => r.owner === AI_ID && r.fromStar === src.id && r.toStar === tgt.id)) continue;
       const power = src.units / Math.max(tgt.units + 1, 1);
       if (power < cfg.attackThreshold) continue;
       const dist  = Math.hypot(src.x - tgt.x, src.y - tgt.y);
@@ -458,12 +467,7 @@ function aiThink() {
       if (score > bestScore) { bestScore = score; best = { src, tgt }; }
     }
   }
-
-  if (best) {
-    const units = Math.floor(best.src.units * cfg.sendRatio);
-    best.src.units -= units;
-    spawnFleet(AI_ID, best.src.id, best.tgt.id, units);
-  }
+  if (best) createRoute(AI_ID, best.src.id, best.tgt.id);
 }
 
 // ============================================================
