@@ -494,79 +494,117 @@ function starAt(x, y) {
   return null;
 }
 
+function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1x = bx - ax, d1y = by - ay;
+  const d2x = dx - cx, d2y = dy - cy;
+  const cross = d1x * d2y - d1y * d2x;
+  if (Math.abs(cross) < 1e-8) return false;
+  const t = ((cx - ax) * d2y - (cy - ay) * d2x) / cross;
+  const u = ((cx - ax) * d1y - (cy - ay) * d1x) / cross;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+function upgradeButtonAt(x, y, starId) {
+  const s = state.stars[starId];
+  if (!s) return null;
+  const pw = 116, ph = 58;
+  const px = Math.max(4, Math.min(logW - pw - 4, s.x - pw / 2));
+  const py = Math.max(4, Math.min(logH - ph - 4, s.y + s.radius + 10));
+  if (x < px || x > px + pw || y < py || y > py + ph) return null;
+  return x < px + pw / 2 ? 'atk' : 'def';
+}
+
+function applyUpgrade(starId, type) {
+  const s = state.stars[starId];
+  if (!s || s.owner !== PLAYER_ID) return;
+  const lv = type === 'atk' ? s.atkLevel : s.defLevel;
+  if (lv >= 3) return;
+  const cost = UPGRADE_COSTS[lv];
+  if (s.units < cost + 1) return;
+  s.units -= cost;
+  if (type === 'atk') s.atkLevel++;
+  else                s.defLevel++;
+}
+
+function handleTap(x, y) {
+  if (state.upgradePanel !== null) {
+    const btn = upgradeButtonAt(x, y, state.upgradePanel);
+    if (btn) { applyUpgrade(state.upgradePanel, btn); return; }
+    state.upgradePanel = null;
+    // fall through: maybe opening a different star's panel
+  }
+  const s = starAt(x, y);
+  if (s && s.owner === PLAYER_ID) {
+    state.upgradePanel = (state.upgradePanel === s.id) ? null : s.id;
+  }
+}
+
 function onDown(e) {
   e.preventDefault();
   const pt = ptFromEvent(e);
 
-  if (state.phase === 'WIN' || state.phase === 'LOSE') {
-    state.phase = 'START';
-    return;
-  }
-
+  if (state.phase === 'WIN' || state.phase === 'LOSE') { state.phase = 'START'; return; }
   if (state.phase === 'START') {
     for (const btn of diffButtons) {
-      if (pt.x >= btn.x && pt.x <= btn.x + btn.w &&
-          pt.y >= btn.y && pt.y <= btn.y + btn.h) {
-        initGame(btn.diff);
-        return;
+      if (pt.x >= btn.x && pt.x <= btn.x + btn.w && pt.y >= btn.y && pt.y <= btn.y + btn.h) {
+        initGame(btn.diff); return;
       }
     }
     return;
   }
+  if (state.phase !== 'PLAYING') return;
 
-  if (state.phase === 'PLAYING') {
-    const s = starAt(pt.x, pt.y);
-    if (s && s.owner === PLAYER_ID) {
-      state.dragFrom = s.id;
-      state.dragPos  = pt;
-    }
-  }
+  const s = starAt(pt.x, pt.y);
+  state.pointerDown = { x: pt.x, y: pt.y, time: performance.now(), startedOnStar: s ? s.id : null };
+  state.dragFrom    = (s && s.owner === PLAYER_ID) ? s.id : null;
+  state.dragPos     = { ...pt };
 }
 
 function onMove(e) {
   e.preventDefault();
-  if (state.phase !== 'PLAYING' || state.dragFrom === null) return;
+  if (state.phase !== 'PLAYING') return;
   state.dragPos = ptFromEvent(e);
 }
 
 function onUp(e) {
   e.preventDefault();
-  if (state.phase !== 'PLAYING') {
-    state.dragFrom = null;
-    state.dragPos  = null;
+  const pt = ptFromEvent(e);
+  const pd = state.pointerDown;
+  state.pointerDown = null;
+  state.dragFrom    = null;
+  state.dragPos     = null;
+
+  if (state.phase !== 'PLAYING' || !pd) return;
+
+  const travel   = Math.hypot(pt.x - pd.x, pt.y - pd.y);
+  const duration = performance.now() - pd.time;
+  const isTap    = travel <= TAP_MAX_MOVE && duration <= TAP_MAX_MS;
+
+  if (isTap) { handleTap(pt.x, pt.y); return; }
+
+  // Drag from own star → create route
+  if (pd.startedOnStar !== null) {
+    const src = state.stars[pd.startedOnStar];
+    if (src && src.owner === PLAYER_ID) {
+      const target = starAt(pt.x, pt.y);
+      if (target && target.id !== pd.startedOnStar) {
+        createRoute(PLAYER_ID, pd.startedOnStar, target.id);
+        state.upgradePanel = null;
+      }
+    }
     return;
   }
 
-  const pt     = ptFromEvent(e);
-  const target = starAt(pt.x, pt.y);
-  const fromId = state.dragFrom;
-
-  state.dragFrom = null;
-  state.dragPos  = null;
-
-  if (fromId !== null) {
-    // --- drag gesture ended ---
-    if (target && target.id !== fromId) {
-      // drag to a different star → send fleet
-      playerSendFleet(fromId, target.id);
-      state.selected = null;
-    } else if (!target) {
-      // drag released on empty space → deselect
-      state.selected = null;
-    } else {
-      // released on same star → toggle selection
-      state.selected = (state.selected === fromId) ? null : fromId;
-    }
-  } else {
-    // --- pure tap ---
-    if (!target) {
-      state.selected = null;
-    } else if (target.owner === PLAYER_ID) {
-      state.selected = (state.selected === target.id) ? null : target.id;
-    } else if (state.selected !== null) {
-      playerSendFleet(state.selected, target.id);
-      state.selected = null;
-    }
+  // Swipe not from a star → cut routes
+  if (travel >= SWIPE_MIN_LEN) {
+    state.routes
+      .filter(r => r.owner === PLAYER_ID && !r._dead)
+      .forEach(r => {
+        const src = state.stars[r.fromStar], tgt = state.stars[r.toStar];
+        if (src && tgt && segmentsIntersect(pd.x, pd.y, pt.x, pt.y, src.x, src.y, tgt.x, tgt.y)) {
+          r._dead = true;
+        }
+      });
   }
 }
 
