@@ -241,6 +241,89 @@ function updateRoutes(dt) {
 }
 
 // ============================================================
+// SHIPS
+// ============================================================
+function spawnShip(owner, fromId, toId) {
+  const from = state.stars[fromId];
+  const to   = state.stars[toId];
+  if (!from || !to) return;
+  state.ships.push({
+    id:       state.shipCounter++,
+    owner,
+    fromStar: fromId,
+    toStar:   toId,
+    x:        from.x,
+    y:        from.y,
+    progress: 0,
+    angle:    Math.atan2(to.y - from.y, to.x - from.x),
+    inCombat: false,
+  });
+}
+
+function atkPower(ship) {
+  const src = state.stars[ship.fromStar];
+  return 1 + (src ? src.atkLevel : 0) * 0.25;
+}
+
+function resolveCombat(ship, targetStar) {
+  // Attacker always dies in combat zone, takes (atkPower / defStrength) defenders with it
+  const dmg = atkPower(ship) / (1 + targetStar.defLevel * 0.25);
+  targetStar.units = Math.max(0, targetStar.units - dmg);
+}
+
+function resolveArrival(ship) {
+  const to = state.stars[ship.toStar];
+  if (!to) return;
+  if (to.owner === ship.owner) {
+    to.units = Math.min(to.units + 1, to.maxUnits);
+  } else {
+    const dmg = atkPower(ship) / (1 + to.defLevel * 0.25);
+    to.units -= dmg;
+    if (to.units <= 0) {
+      to.owner   = ship.owner;
+      to.units   = Math.abs(to.units);
+      to.atkLevel = 0;
+      to.defLevel = 0;
+      // Remove captor's own routes to this star (already won)
+      state.routes = state.routes.filter(r => !(r.toStar === to.id && r.owner === ship.owner));
+    }
+  }
+}
+
+function updateShips(dt) {
+  for (let i = state.ships.length - 1; i >= 0; i--) {
+    const ship = state.ships[i];
+    const from = state.stars[ship.fromStar];
+    const to   = state.stars[ship.toStar];
+    if (!from || !to) { state.ships.splice(i, 1); continue; }
+
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    if (dist < 1) { resolveArrival(ship); state.ships.splice(i, 1); continue; }
+
+    ship.progress += (SHIP_SPEED * dt) / dist;
+    ship.x = from.x + (to.x - from.x) * Math.min(ship.progress, 1);
+    ship.y = from.y + (to.y - from.y) * Math.min(ship.progress, 1);
+
+    // Enter combat zone
+    if (!ship.inCombat && Math.hypot(ship.x - to.x, ship.y - to.y) <= to.radius * COMBAT_RANGE_MULT) {
+      ship.inCombat = true;
+    }
+
+    // Fight defenders in combat zone (only vs defended enemy star)
+    if (ship.inCombat && ship.owner !== to.owner && to.owner !== NEUTRAL_ID && to.units >= 1) {
+      resolveCombat(ship, to);
+      state.ships.splice(i, 1);
+      continue;
+    }
+
+    if (ship.progress >= 1) {
+      resolveArrival(ship);
+      state.ships.splice(i, 1);
+    }
+  }
+}
+
+// ============================================================
 // GAME LOGIC
 // ============================================================
 function spawnFleet(owner, fromId, toId, units) {
