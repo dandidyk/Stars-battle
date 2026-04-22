@@ -259,7 +259,9 @@ function checkWinLose() {
   const pFleets = state.fleets.some(f => f.owner === PLAYER_ID);
   if (!pStars && !pFleets) { state.phase = 'LOSE'; return; }
 
-  if (state.stars.every(s => s.owner === PLAYER_ID)) { state.phase = 'WIN'; }
+  const aiStars  = state.stars.some(s => s.owner === AI_ID);
+  const aiFleets = state.fleets.some(f => f.owner === AI_ID);
+  if (!aiStars && !aiFleets) { state.phase = 'WIN'; }
 }
 
 // ============================================================
