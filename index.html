@@ -149,6 +149,29 @@ class StartScene extends Phaser.Scene {
   }
 }
 
+// ─── ROUTE HELPERS ─────────────────────────────────────────────
+const ROUTE_DISPATCH_MS = 900;
+let   routeCounter      = 0;
+
+function createRoute(owner, fromStar, toStar) {
+  return {
+    id:            routeCounter++,
+    owner,
+    fromStar,
+    toStar,
+    dispatchTimer: 0,
+    dashOffset:    0,
+  };
+}
+
+function routeIsDead(route) {
+  // Source changed owner
+  if (route.fromStar.owner !== route.owner) return true;
+  // Target already belongs to owner
+  if (route.toStar.owner === route.owner) return true;
+  return false;
+}
+
 // ─── GAME SCENE ────────────────────────────────────────────────
 class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
@@ -163,14 +186,16 @@ class GameScene extends Phaser.Scene {
 
     createStarfield(this);
 
-    const cfg  = DIFFICULTY[this.difficulty];
-    this.stars = generateStars(W, H, cfg.stars);
+    const cfg    = DIFFICULTY[this.difficulty];
+    this.stars   = generateStars(W, H, cfg.stars);
+    this.routes  = [];
 
+    this.routeGfx     = this.add.graphics();
     this.starGfx      = this.add.graphics();
     this.selectionGfx = this.add.graphics();
     this.unitLabels   = [];
     this.selectedStar = null;
-    this.selPulse     = 0; // oscillation timer
+    this.selPulse     = 0;
 
     for (const s of this.stars) {
       const lbl = this.add.text(s.x, s.y + s.radius + 14, '', {
@@ -187,6 +212,7 @@ class GameScene extends Phaser.Scene {
     this.setupInput();
   }
 
+  // ── Input ────────────────────────────────────────────────────
   starAt(x, y) {
     for (const s of this.stars) {
       if (Math.hypot(x - s.x, y - s.y) <= s.radius + 8) return s;
@@ -199,31 +225,79 @@ class GameScene extends Phaser.Scene {
       const hit = this.starAt(ptr.x, ptr.y);
 
       if (!hit) {
-        // Tap on empty space → deselect
         this.selectedStar = null;
         return;
       }
 
       if (hit.owner === OWNER_PLAYER) {
-        if (this.selectedStar === hit) {
-          // Tap same star again → deselect
-          this.selectedStar = null;
-        } else {
-          // Select this star
-          this.selectedStar = hit;
-          this.selPulse     = 0;
-        }
+        this.selectedStar = (this.selectedStar === hit) ? null : hit;
+        this.selPulse = 0;
         return;
       }
 
-      // Tap enemy/neutral star with a selection active → create route (Phase 6)
-      if (this.selectedStar && hit.owner !== OWNER_PLAYER) {
-        console.log(`Route: star ${this.selectedStar.id} → star ${hit.id}`);
+      if (this.selectedStar && hit !== this.selectedStar) {
+        // Check no duplicate route already exists
+        const dup = this.routes.find(
+          r => r.fromStar === this.selectedStar && r.toStar === hit && r.owner === OWNER_PLAYER
+        );
+        if (!dup) {
+          this.routes.push(createRoute(OWNER_PLAYER, this.selectedStar, hit));
+        }
         this.selectedStar = null;
       }
     });
   }
 
+  // ── Routes ───────────────────────────────────────────────────
+  updateRoutes(dt) {
+    this.routes = this.routes.filter(r => !routeIsDead(r));
+    for (const r of this.routes) {
+      r.dashOffset += 40 * dt; // animate dash flow
+    }
+  }
+
+  drawRoutes() {
+    this.routeGfx.clear();
+    for (const r of this.routes) {
+      const color = r.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
+      const from  = r.fromStar;
+      const to    = r.toStar;
+      const dx    = to.x - from.x;
+      const dy    = to.y - from.y;
+      const len   = Math.hypot(dx, dy);
+      const ux    = dx / len;
+      const uy    = dy / len;
+
+      // Start/end at star edges
+      const x1 = from.x + ux * from.radius;
+      const y1 = from.y + uy * from.radius;
+      const x2 = to.x   - ux * to.radius;
+      const y2 = to.y   - uy * to.radius;
+
+      // Draw animated dashed line
+      const dashLen  = 10;
+      const gapLen   = 6;
+      const cycle    = dashLen + gapLen;
+      const segLen   = Math.hypot(x2 - x1, y2 - y1);
+      const offset   = r.dashOffset % cycle;
+
+      this.routeGfx.lineStyle(1.5, color, 0.55);
+      let pos = -offset;
+      while (pos < segLen) {
+        const start = Math.max(pos, 0);
+        const end   = Math.min(pos + dashLen, segLen);
+        if (end > start) {
+          this.routeGfx.beginPath();
+          this.routeGfx.moveTo(x1 + ux * start, y1 + uy * start);
+          this.routeGfx.lineTo(x1 + ux * end,   y1 + uy * end);
+          this.routeGfx.strokePath();
+        }
+        pos += cycle;
+      }
+    }
+  }
+
+  // ── Stars ────────────────────────────────────────────────────
   drawSelection() {
     this.selectionGfx.clear();
     if (!this.selectedStar) return;
@@ -248,14 +322,16 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── Game loop ────────────────────────────────────────────────
   update(time, delta) {
     const dt = delta / 1000;
 
-    for (const s of this.stars) {
-      s.rotation += s.rotSpeed * dt;
-    }
+    for (const s of this.stars) s.rotation += s.rotSpeed * dt;
     this.selPulse += dt;
 
+    this.updateRoutes(dt);
+
+    this.drawRoutes();
     this.drawStars();
     this.drawSelection();
   }
