@@ -119,17 +119,24 @@ class GameScene extends Phaser.Scene {
 
     createStarfield(this);
 
-    const cfg        = DIFFICULTY[this.difficulty];
-    const starData   = generateStarData(W, H, cfg.stars);
-    this.starObjects = [];
+    const cfg    = DIFFICULTY[this.difficulty];
+    this.stars   = generateStars(W, H, cfg.stars);
 
-    const gfx = this.add.graphics();
+    // Draw stars as colored circles (shapes upgraded in Phase 3)
+    this.starGfx = this.add.graphics();
+    this.drawStars();
+  }
 
-    for (const s of starData) {
-      // Neutral grey circle for now — colors & shapes added in next steps
-      gfx.fillStyle(C.NEUTRAL, 1);
-      gfx.fillCircle(s.x, s.y, s.radius);
-      this.starObjects.push(s);
+  drawStars() {
+    this.starGfx.clear();
+    const colorMap = {
+      [OWNER_NEUTRAL]: C.NEUTRAL,
+      [OWNER_PLAYER]:  C.PLAYER,
+      [OWNER_AI]:      C.AI,
+    };
+    for (const s of this.stars) {
+      this.starGfx.fillStyle(colorMap[s.owner], 1);
+      this.starGfx.fillCircle(s.x, s.y, s.radius);
     }
   }
 
@@ -139,41 +146,69 @@ class GameScene extends Phaser.Scene {
 // ─── STAR GENERATION ───────────────────────────────────────────
 const STAR_RADIUS_MIN = 18;
 const STAR_RADIUS_MAX = 38;
-const STAR_MARGIN     = 60;  // min distance from screen edge
-const STAR_MIN_GAP    = 28;  // min gap between star edges
+const STAR_MARGIN     = 60;
+const STAR_MIN_GAP    = 28;
 
-function generateStarData(W, H, count) {
-  const rng    = new Phaser.Math.RandomDataGenerator([`map_${count}`]);
-  const placed = [];
+const OWNER_NEUTRAL = -1;
+const OWNER_PLAYER  =  0;
+const OWNER_AI      =  1;
+
+function buildStar(id, x, y, radius, owner) {
+  const maxUnits  = Math.round(radius * 3);
+  const regenRate = radius * 0.8 / STAR_RADIUS_MAX; // units/sec
+  let units;
+  if (owner === OWNER_PLAYER || owner === OWNER_AI) {
+    units = Math.round(radius * 1.5);
+  } else {
+    units = Math.round(radius * 0.8); // small neutral garrison
+  }
+  return {
+    id,
+    x, y,
+    radius,
+    owner,
+    units,
+    regenRate,
+    maxUnits,
+    atkLevel: 0,
+    defLevel: 0,
+    rotation: 0,
+    rotSpeed: (Math.random() * 0.3 + 0.1) * (Math.random() < 0.5 ? 1 : -1),
+  };
+}
+
+function generateStars(W, H, count) {
+  const rng    = new Phaser.Math.RandomDataGenerator([`map_${count}_${W}`]);
+  const pts    = [];
   const tries  = 800;
 
+  // Generate positions with rejection sampling
   for (let i = 0; i < count; i++) {
     const r = rng.between(STAR_RADIUS_MIN, STAR_RADIUS_MAX);
-    let placed_ok = false;
-
     for (let t = 0; t < tries; t++) {
       const x = rng.between(STAR_MARGIN + r, W - STAR_MARGIN - r);
       const y = rng.between(STAR_MARGIN + r, H - STAR_MARGIN - r);
-
-      // Rejection: check no overlap with already placed stars
       let ok = true;
-      for (const s of placed) {
-        const dist = Math.hypot(x - s.x, y - s.y);
-        if (dist < s.radius + r + STAR_MIN_GAP) { ok = false; break; }
+      for (const s of pts) {
+        if (Math.hypot(x - s.x, y - s.y) < s.r + r + STAR_MIN_GAP) { ok = false; break; }
       }
-
-      if (ok) {
-        placed.push({ x, y, radius: r });
-        placed_ok = true;
-        break;
-      }
+      if (ok) { pts.push({ x, y, r }); break; }
     }
-
-    // If we can't place — skip (map may have fewer stars than requested)
-    if (!placed_ok) console.warn(`Could not place star ${i}`);
   }
 
-  return placed;
+  // Assign player = largest star in left half, AI = largest in right half
+  const leftPts  = pts.filter(p => p.x < W / 2).sort((a, b) => b.r - a.r);
+  const rightPts = pts.filter(p => p.x >= W / 2).sort((a, b) => b.r - a.r);
+
+  const playerPt = leftPts[0];
+  const aiPt     = rightPts[0];
+
+  return pts.map((p, i) => {
+    let owner = OWNER_NEUTRAL;
+    if (p === playerPt) owner = OWNER_PLAYER;
+    if (p === aiPt)     owner = OWNER_AI;
+    return buildStar(i, p.x, p.y, p.r, owner);
+  });
 }
 
 // ─── PHASER CONFIG ─────────────────────────────────────────────
