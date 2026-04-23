@@ -259,6 +259,41 @@ class GameScene extends Phaser.Scene {
 
     this.drawStars();
     this.setupInput();
+    this.createHUD();
+  }
+
+  createHUD() {
+    const W = this.scale.width;
+    const pad = 16;
+    const style = (color) => ({
+      fontSize: '15px',
+      fontFamily: 'Arial',
+      color,
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+
+    // Player: top-left
+    this.hudPlayerStars = this.add.text(pad, pad, '', style('#4fc3f7'));
+    this.hudPlayerRoutes = this.add.text(pad, pad + 22, '', style('#4fc3f7'));
+
+    // AI: top-right
+    this.hudAIStars = this.add.text(W - pad, pad, '', { ...style('#ef5350'), align: 'right' })
+      .setOrigin(1, 0);
+    this.hudAIRoutes = this.add.text(W - pad, pad + 22, '', { ...style('#ef5350'), align: 'right' })
+      .setOrigin(1, 0);
+  }
+
+  updateHUD() {
+    const playerStars  = this.stars.filter(s => s.owner === OWNER_PLAYER).length;
+    const aiStars      = this.stars.filter(s => s.owner === OWNER_AI).length;
+    const playerRoutes = this.routes.filter(r => r.owner === OWNER_PLAYER).length;
+    const aiRoutes     = this.routes.filter(r => r.owner === OWNER_AI).length;
+
+    this.hudPlayerStars.setText(`★ ${playerStars}`);
+    this.hudPlayerRoutes.setText(`→ ${playerRoutes}`);
+    this.hudAIStars.setText(`${aiStars} ★`);
+    this.hudAIRoutes.setText(`${aiRoutes} ←`);
   }
 
   // ── Input ────────────────────────────────────────────────────
@@ -571,6 +606,7 @@ class GameScene extends Phaser.Scene {
     this.drawShips();
     this.drawStars();
     this.drawSelection();
+    this.updateHUD();
   }
 }
 
