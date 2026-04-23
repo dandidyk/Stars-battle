@@ -208,6 +208,31 @@ class StartScene extends Phaser.Scene {
   }
 }
 
+// ─── GEOMETRY ──────────────────────────────────────────────────
+function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const det = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+  if (Math.abs(det) < 1e-10) return false;
+  const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / det;
+  const u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / det;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+function routeLineEndpoints(route) {
+  const from = route.fromStar;
+  const to   = route.toStar;
+  const dx   = to.x - from.x;
+  const dy   = to.y - from.y;
+  const len  = Math.hypot(dx, dy);
+  const ux   = dx / len;
+  const uy   = dy / len;
+  return {
+    x1: from.x + ux * from.radius,
+    y1: from.y + uy * from.radius,
+    x2: to.x   - ux * to.radius,
+    y2: to.y   - uy * to.radius,
+  };
+}
+
 // ─── COMBAT ────────────────────────────────────────────────────
 function atkPower(star)   { return 1 + star.atkLevel * 0.25; }
 function defFactor(star)  { return 1 / (1 + star.defLevel * 0.25); }
@@ -297,10 +322,11 @@ class GameScene extends Phaser.Scene {
     this.aiTimer      = 0;
     this.aiInterval   = DIFFICULTY[this.difficulty].aiInterval;
 
-    this.dragFrom     = null;  // star being dragged from
-    this.dragPos      = null;  // current pointer position during drag
-    this.dragMoved    = false; // did pointer move enough to count as drag?
-    this.dragOrigin   = null;  // where pointer went down
+    this.dragFrom     = null;
+    this.dragPos      = null;
+    this.dragMoved    = false;
+    this.dragOrigin   = null;
+    this.swipePath    = null;  // [{x,y}] trail for swipe-cut gesture
 
     this.routeGfx     = this.add.graphics();
     this.dragGfx      = this.add.graphics();
@@ -379,17 +405,25 @@ class GameScene extends Phaser.Scene {
       this.dragMoved  = false;
 
       if (hit && hit.owner === OWNER_PLAYER) {
-        this.dragFrom = hit;
-        this.dragPos  = { x: ptr.x, y: ptr.y };
+        this.dragFrom  = hit;
+        this.dragPos   = { x: ptr.x, y: ptr.y };
+        this.swipePath = null;
+      } else {
+        // Starting on empty space or enemy → potential swipe
+        this.dragFrom  = null;
+        this.swipePath = [{ x: ptr.x, y: ptr.y }];
       }
     });
 
     this.input.on('pointermove', (ptr) => {
-      if (!this.dragFrom) return;
-      this.dragPos = { x: ptr.x, y: ptr.y };
-      if (!this.dragMoved) {
-        const d = Math.hypot(ptr.x - this.dragOrigin.x, ptr.y - this.dragOrigin.y);
-        if (d > DRAG_THRESHOLD) this.dragMoved = true;
+      if (this.dragFrom) {
+        this.dragPos = { x: ptr.x, y: ptr.y };
+        if (!this.dragMoved) {
+          const d = Math.hypot(ptr.x - this.dragOrigin.x, ptr.y - this.dragOrigin.y);
+          if (d > DRAG_THRESHOLD) this.dragMoved = true;
+        }
+      } else if (this.swipePath) {
+        this.swipePath.push({ x: ptr.x, y: ptr.y });
       }
     });
 
@@ -397,19 +431,31 @@ class GameScene extends Phaser.Scene {
       if (this.phase !== 'playing') return;
       const hit = this.starAt(ptr.x, ptr.y);
 
+      // ── Swipe-cut check ──
+      if (this.swipePath && this.swipePath.length >= 2) {
+        const swipeDist = Math.hypot(
+          ptr.x - this.swipePath[0].x,
+          ptr.y - this.swipePath[0].y
+        );
+        if (swipeDist > 40) {
+          this.cutRoutesAlongSwipe();
+        }
+        this.swipePath = null;
+        return;
+      }
+      this.swipePath = null;
+
       if (this.dragFrom) {
         if (this.dragMoved) {
-          // ── Drag released ──
           if (hit && hit !== this.dragFrom) {
             this.tryCreateRoute(this.dragFrom, hit);
           }
-          this.dragFrom   = null;
-          this.dragPos    = null;
-          this.dragMoved  = false;
+          this.dragFrom  = null;
+          this.dragPos   = null;
+          this.dragMoved = false;
           return;
         }
-
-        // ── It was a tap (no significant movement) ──
+        // Tap
         if (!hit) {
           this.selectedStar = null;
         } else if (hit.owner === OWNER_PLAYER) {
@@ -425,7 +471,6 @@ class GameScene extends Phaser.Scene {
         return;
       }
 
-      // Tapped with no dragFrom — deselect on empty space
       if (!hit) this.selectedStar = null;
     });
   }
@@ -436,6 +481,45 @@ class GameScene extends Phaser.Scene {
       r => r.fromStar === from && r.toStar === to && r.owner === OWNER_PLAYER
     );
     if (!dup) this.routes.push(createRoute(OWNER_PLAYER, from, to));
+  }
+
+  cutRoutesAlongSwipe() {
+    const path = this.swipePath;
+    if (!path || path.length < 2) return;
+
+    // Check every consecutive pair of swipe points against every player route
+    const cut = new Set();
+    for (let i = 0; i < path.length - 1; i++) {
+      const sx1 = path[i].x,   sy1 = path[i].y;
+      const sx2 = path[i+1].x, sy2 = path[i+1].y;
+
+      for (const route of this.routes) {
+        if (route.owner !== OWNER_PLAYER) continue;
+        const { x1, y1, x2, y2 } = routeLineEndpoints(route);
+        if (segmentsIntersect(sx1, sy1, sx2, sy2, x1, y1, x2, y2)) {
+          cut.add(route);
+        }
+      }
+    }
+
+    if (cut.size === 0) return;
+
+    // Flash the cut lines then remove
+    for (const route of cut) {
+      const { x1, y1, x2, y2 } = routeLineEndpoints(route);
+      const flash = this.add.graphics();
+      flash.lineStyle(3, 0xffffff, 0.9);
+      flash.beginPath();
+      flash.moveTo(x1, y1);
+      flash.lineTo(x2, y2);
+      flash.strokePath();
+      this.tweens.add({
+        targets: flash, alpha: 0, duration: 220,
+        onComplete: () => flash.destroy(),
+      });
+    }
+
+    this.routes = this.routes.filter(r => !cut.has(r));
   }
 
   // ── Drag visual ─────────────────────────────────────────────
