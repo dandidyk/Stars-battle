@@ -30,24 +30,36 @@ const DIFFICULTY = {
   hard:   { stars: 16, aiInterval: 700  },
 };
 
-// ─── SHARED: draw starfield on any scene ───────────────────────
+// ─── SHARED: starfield with twinkling ─────────────────────────
 function createStarfield(scene) {
-  const W = scene.scale.width;
-  const H = scene.scale.height;
-  const gfx = scene.add.graphics();
-
+  const W   = scene.scale.width;
+  const H   = scene.scale.height;
   const rng = new Phaser.Math.RandomDataGenerator(['stars']);
 
   for (let i = 0; i < 160; i++) {
     const x     = rng.between(0, W);
     const y     = rng.between(0, H);
-    const r     = rng.between(1, 10) < 8 ? 0.8 : 1.4; // mostly tiny, few bigger
+    const r     = rng.between(1, 10) < 8 ? 0.8 : 1.5;
     const alpha = rng.realInRange(0.25, 0.85);
-    gfx.fillStyle(0xffffff, alpha);
-    gfx.fillCircle(x, y, r);
-  }
 
-  return gfx;
+    // Use individual circle shapes so Tweens can animate alpha
+    const dot = scene.add.circle(x, y, r, 0xffffff, alpha);
+
+    // Only ~35% of stars twinkle, keeps it subtle
+    if (rng.between(1, 100) <= 35) {
+      const dur   = rng.between(1800, 4200);
+      const delay = rng.between(0, 3000);
+      scene.tweens.add({
+        targets:  dot,
+        alpha:    { from: alpha * 0.25, to: alpha },
+        duration: dur,
+        delay,
+        yoyo:     true,
+        repeat:   -1,
+        ease:     'Sine.easeInOut',
+      });
+    }
+  }
 }
 
 // ─── BOOT SCENE ────────────────────────────────────────────────
