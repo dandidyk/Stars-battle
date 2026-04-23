@@ -71,14 +71,25 @@ const config = {
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: window.innerWidth,
+    height: window.innerHeight,
   },
   render: {
     antialias: true,
     pixelArt: false,
+    resolution: Math.min(window.devicePixelRatio || 1, 2),
+  },
+  input: {
+    activePointers: 3,
   },
 };
 
 const game = new Phaser.Game(config);
+
+// Auto-resize on orientation change / window resize
+window.addEventListener('resize', () => {
+  game.scale.resize(window.innerWidth, window.innerHeight);
+});
 
 </script>
 </body>
