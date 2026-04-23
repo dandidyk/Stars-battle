@@ -166,10 +166,12 @@ class GameScene extends Phaser.Scene {
     const cfg  = DIFFICULTY[this.difficulty];
     this.stars = generateStars(W, H, cfg.stars);
 
-    this.starGfx    = this.add.graphics();
-    this.unitLabels = [];
+    this.starGfx      = this.add.graphics();
+    this.selectionGfx = this.add.graphics();
+    this.unitLabels   = [];
+    this.selectedStar = null;
+    this.selPulse     = 0; // oscillation timer
 
-    // Create one text label per star
     for (const s of this.stars) {
       const lbl = this.add.text(s.x, s.y + s.radius + 14, '', {
         fontSize: '14px',
@@ -182,6 +184,56 @@ class GameScene extends Phaser.Scene {
     }
 
     this.drawStars();
+    this.setupInput();
+  }
+
+  starAt(x, y) {
+    for (const s of this.stars) {
+      if (Math.hypot(x - s.x, y - s.y) <= s.radius + 8) return s;
+    }
+    return null;
+  }
+
+  setupInput() {
+    this.input.on('pointerdown', (ptr) => {
+      const hit = this.starAt(ptr.x, ptr.y);
+
+      if (!hit) {
+        // Tap on empty space → deselect
+        this.selectedStar = null;
+        return;
+      }
+
+      if (hit.owner === OWNER_PLAYER) {
+        if (this.selectedStar === hit) {
+          // Tap same star again → deselect
+          this.selectedStar = null;
+        } else {
+          // Select this star
+          this.selectedStar = hit;
+          this.selPulse     = 0;
+        }
+        return;
+      }
+
+      // Tap enemy/neutral star with a selection active → create route (Phase 6)
+      if (this.selectedStar && hit.owner !== OWNER_PLAYER) {
+        console.log(`Route: star ${this.selectedStar.id} → star ${hit.id}`);
+        this.selectedStar = null;
+      }
+    });
+  }
+
+  drawSelection() {
+    this.selectionGfx.clear();
+    if (!this.selectedStar) return;
+    const s     = this.selectedStar;
+    const pulse = 0.7 + 0.3 * Math.sin(this.selPulse * 4);
+    const r     = s.radius * 1.55 + pulse * 4;
+    this.selectionGfx.lineStyle(2, C.PLAYER, 0.55 + 0.35 * pulse);
+    this.selectionGfx.strokeCircle(s.x, s.y, r);
+    this.selectionGfx.lineStyle(1, C.PLAYER, 0.25);
+    this.selectionGfx.strokeCircle(s.x, s.y, r + 5);
   }
 
   drawStars() {
@@ -189,24 +241,23 @@ class GameScene extends Phaser.Scene {
     for (const s of this.stars) {
       drawStarShape(this.starGfx, s);
     }
-    // Update unit labels
     for (let i = 0; i < this.stars.length; i++) {
-      const s   = this.stars[i];
-      const lbl = this.unitLabels[i];
-      lbl.setText(Math.floor(s.units));
-      lbl.setY(s.y + s.radius + 12);
+      const s = this.stars[i];
+      this.unitLabels[i].setText(Math.floor(s.units));
+      this.unitLabels[i].setY(s.y + s.radius + 12);
     }
   }
 
   update(time, delta) {
-    const dt = delta / 1000; // seconds
+    const dt = delta / 1000;
 
-    // Rotate stars
     for (const s of this.stars) {
       s.rotation += s.rotSpeed * dt;
     }
+    this.selPulse += dt;
 
     this.drawStars();
+    this.drawSelection();
   }
 }
 
