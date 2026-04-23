@@ -149,6 +149,30 @@ class StartScene extends Phaser.Scene {
   }
 }
 
+// ─── COMBAT ────────────────────────────────────────────────────
+function atkPower(star)   { return 1 + star.atkLevel * 0.25; }
+function defFactor(star)  { return 1 / (1 + star.defLevel * 0.25); }
+
+function resolveArrival(ship) {
+  const target = ship.toStar;
+  if (ship.owner === target.owner) {
+    // Friendly reinforcement
+    target.units = Math.min(target.units + 1, target.maxUnits);
+  } else {
+    // Attack: ATK of source owner's star vs DEF of target
+    const dmg = atkPower(ship.fromStar) * defFactor(target);
+    target.units -= dmg;
+    if (target.units < 0) {
+      // Capture!
+      target.owner = ship.owner;
+      target.units = Math.abs(target.units);
+      // Reset ATK/DEF on capture (optional but fair)
+      target.atkLevel = 0;
+      target.defLevel = 0;
+    }
+  }
+}
+
 // ─── SHIP HELPERS ──────────────────────────────────────────────
 const SHIP_SPEED = 120; // px/sec
 let   shipCounter = 0;
@@ -296,8 +320,7 @@ class GameScene extends Phaser.Scene {
       ship.y = ship.fromStar.y + (ship.toStar.y - ship.fromStar.y) * ship.progress;
 
       if (ship.progress >= 1) {
-        // Arrival — combat resolved in Phase 8, for now just reinforce
-        ship.toStar.units += 1;
+        resolveArrival(ship);
       } else {
         alive.push(ship);
       }
@@ -390,7 +413,13 @@ class GameScene extends Phaser.Scene {
   update(time, delta) {
     const dt = delta / 1000;
 
-    for (const s of this.stars) s.rotation += s.rotSpeed * dt;
+    for (const s of this.stars) {
+      s.rotation += s.rotSpeed * dt;
+      // Regen: owned stars grow units up to maxUnits
+      if (s.owner !== OWNER_NEUTRAL) {
+        s.units = Math.min(s.units + s.regenRate * dt, s.maxUnits);
+      }
+    }
     this.selPulse += dt;
 
     this.updateRoutes(dt);
