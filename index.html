@@ -149,6 +149,25 @@ class StartScene extends Phaser.Scene {
   }
 }
 
+// ─── SHIP HELPERS ──────────────────────────────────────────────
+const SHIP_SPEED = 120; // px/sec
+let   shipCounter = 0;
+
+function createShip(owner, fromStar, toStar) {
+  const angle = Math.atan2(toStar.y - fromStar.y, toStar.x - fromStar.x);
+  return {
+    id:       shipCounter++,
+    owner,
+    fromStar,
+    toStar,
+    x:        fromStar.x,
+    y:        fromStar.y,
+    progress: 0,
+    angle,
+    totalDist: Math.hypot(toStar.x - fromStar.x, toStar.y - fromStar.y),
+  };
+}
+
 // ─── ROUTE HELPERS ─────────────────────────────────────────────
 const ROUTE_DISPATCH_MS = 900;
 let   routeCounter      = 0;
@@ -190,7 +209,9 @@ class GameScene extends Phaser.Scene {
     this.stars   = generateStars(W, H, cfg.stars);
     this.routes  = [];
 
+    this.ships        = [];
     this.routeGfx     = this.add.graphics();
+    this.shipGfx      = this.add.graphics();
     this.starGfx      = this.add.graphics();
     this.selectionGfx = this.add.graphics();
     this.unitLabels   = [];
@@ -252,7 +273,50 @@ class GameScene extends Phaser.Scene {
   updateRoutes(dt) {
     this.routes = this.routes.filter(r => !routeIsDead(r));
     for (const r of this.routes) {
-      r.dashOffset += 40 * dt; // animate dash flow
+      r.dashOffset    += 40 * dt;
+      r.dispatchTimer += dt * 1000; // ms
+
+      if (r.dispatchTimer >= ROUTE_DISPATCH_MS) {
+        r.dispatchTimer = 0;
+        // Only dispatch if source has enough units
+        if (r.fromStar.units >= 2) {
+          r.fromStar.units -= 1;
+          this.ships.push(createShip(r.owner, r.fromStar, r.toStar));
+        }
+      }
+    }
+  }
+
+  // ── Ships ────────────────────────────────────────────────────
+  updateShips(dt) {
+    const alive = [];
+    for (const ship of this.ships) {
+      ship.progress += (SHIP_SPEED * dt) / ship.totalDist;
+      ship.x = ship.fromStar.x + (ship.toStar.x - ship.fromStar.x) * ship.progress;
+      ship.y = ship.fromStar.y + (ship.toStar.y - ship.fromStar.y) * ship.progress;
+
+      if (ship.progress >= 1) {
+        // Arrival — combat resolved in Phase 8, for now just reinforce
+        ship.toStar.units += 1;
+      } else {
+        alive.push(ship);
+      }
+    }
+    this.ships = alive;
+  }
+
+  drawShips() {
+    this.shipGfx.clear();
+    const size = 6;
+    for (const ship of this.ships) {
+      const color = ship.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
+      const a     = ship.angle;
+      // Triangle pointing in direction of travel
+      const tip  = { x: ship.x + Math.cos(a) * size,       y: ship.y + Math.sin(a) * size };
+      const left = { x: ship.x + Math.cos(a + 2.4) * size * 0.65, y: ship.y + Math.sin(a + 2.4) * size * 0.65 };
+      const right= { x: ship.x + Math.cos(a - 2.4) * size * 0.65, y: ship.y + Math.sin(a - 2.4) * size * 0.65 };
+      this.shipGfx.fillStyle(color, 0.92);
+      this.shipGfx.fillTriangle(tip.x, tip.y, left.x, left.y, right.x, right.y);
     }
   }
 
@@ -330,8 +394,10 @@ class GameScene extends Phaser.Scene {
     this.selPulse += dt;
 
     this.updateRoutes(dt);
+    this.updateShips(dt);
 
     this.drawRoutes();
+    this.drawShips();
     this.drawStars();
     this.drawSelection();
   }
