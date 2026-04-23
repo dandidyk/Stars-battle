@@ -14,12 +14,29 @@
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
 <script>
 
+// ─── CONSTANTS ─────────────────────────────────────────────────
+const C = {
+  BG:      0x0d0d1a,
+  PLAYER:  0x4fc3f7,
+  AI:      0xef5350,
+  NEUTRAL: 0x555566,
+  TEXT:    '#e0e8ff',
+  SUBTEXT: '#888899',
+};
+
+// Difficulty presets (populated later when game logic is added)
+const DIFFICULTY = {
+  easy:   { stars: 8,  aiInterval: 2000 },
+  normal: { stars: 12, aiInterval: 1200 },
+  hard:   { stars: 16, aiInterval: 700  },
+};
+
 // ─── BOOT SCENE ────────────────────────────────────────────────
 class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
 
   preload() {
-    // Assets will be loaded here in future steps
+    // Future: load audio, atlas sprites here
   }
 
   create() {
@@ -32,19 +49,36 @@ class StartScene extends Phaser.Scene {
   constructor() { super('Start'); }
 
   create() {
-    const { width, height } = this.scale;
+    const W = this.scale.width;
+    const H = this.scale.height;
 
-    this.add.text(width / 2, height / 2, 'STARS BATTLE', {
-      fontSize: '42px',
-      fontFamily: 'Arial',
+    // Title
+    this.add.text(W / 2, H * 0.30, 'STARS BATTLE', {
+      fontSize: '46px',
+      fontFamily: 'Arial Black, Arial',
       color: '#4fc3f7',
+      stroke: '#0d0d1a',
+      strokeThickness: 6,
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height / 2 + 60, 'Coming soon...', {
+    // Subtitle
+    this.add.text(W / 2, H * 0.30 + 58, 'Conquer the galaxy', {
       fontSize: '18px',
       fontFamily: 'Arial',
       color: '#888899',
     }).setOrigin(0.5);
+
+    // Difficulty buttons — will be wired up in Phase 17
+    // For now: tap anywhere to start Normal game
+    this.add.text(W / 2, H * 0.62, 'TAP TO PLAY', {
+      fontSize: '22px',
+      fontFamily: 'Arial',
+      color: '#4fc3f7',
+    }).setOrigin(0.5);
+
+    this.input.once('pointerdown', () => {
+      this.scene.start('Game', { difficulty: 'normal' });
+    });
   }
 }
 
@@ -52,20 +86,41 @@ class StartScene extends Phaser.Scene {
 class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
 
+  init(data) {
+    this.difficulty = data.difficulty || 'normal';
+  }
+
   create() {
-    // Game logic will be built here step by step
+    const W = this.scale.width;
+    const H = this.scale.height;
+
+    // Placeholder — game logic added step by step
+    this.add.text(W / 2, H / 2, 'GAME SCENE', {
+      fontSize: '28px',
+      fontFamily: 'Arial',
+      color: '#4fc3f7',
+    }).setOrigin(0.5);
+
+    this.add.text(W / 2, H / 2 + 50, `Difficulty: ${this.difficulty}`, {
+      fontSize: '18px',
+      fontFamily: 'Arial',
+      color: '#888899',
+    }).setOrigin(0.5);
+
+    // Back to start on tap (temporary)
+    this.input.once('pointerdown', () => {
+      this.scene.start('Start');
+    });
   }
 
   update(time, delta) {
-    // Game loop
+    // Game loop — filled in upcoming steps
   }
 }
 
 // ─── PHASER CONFIG ─────────────────────────────────────────────
 const config = {
   type: Phaser.AUTO,
-  width: window.innerWidth,
-  height: window.innerHeight,
   backgroundColor: '#0d0d1a',
   scene: [BootScene, StartScene, GameScene],
   scale: {
@@ -86,7 +141,6 @@ const config = {
 
 const game = new Phaser.Game(config);
 
-// Auto-resize on orientation change / window resize
 window.addEventListener('resize', () => {
   game.scale.resize(window.innerWidth, window.innerHeight);
 });
