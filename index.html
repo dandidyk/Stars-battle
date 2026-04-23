@@ -24,24 +24,37 @@ const C = {
   SUBTEXT: '#888899',
 };
 
-// Difficulty presets (populated later when game logic is added)
 const DIFFICULTY = {
   easy:   { stars: 8,  aiInterval: 2000 },
   normal: { stars: 12, aiInterval: 1200 },
   hard:   { stars: 16, aiInterval: 700  },
 };
 
+// ─── SHARED: draw starfield on any scene ───────────────────────
+function createStarfield(scene) {
+  const W = scene.scale.width;
+  const H = scene.scale.height;
+  const gfx = scene.add.graphics();
+
+  const rng = new Phaser.Math.RandomDataGenerator(['stars']);
+
+  for (let i = 0; i < 160; i++) {
+    const x     = rng.between(0, W);
+    const y     = rng.between(0, H);
+    const r     = rng.between(1, 10) < 8 ? 0.8 : 1.4; // mostly tiny, few bigger
+    const alpha = rng.realInRange(0.25, 0.85);
+    gfx.fillStyle(0xffffff, alpha);
+    gfx.fillCircle(x, y, r);
+  }
+
+  return gfx;
+}
+
 // ─── BOOT SCENE ────────────────────────────────────────────────
 class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
-
-  preload() {
-    // Future: load audio, atlas sprites here
-  }
-
-  create() {
-    this.scene.start('Start');
-  }
+  preload() {}
+  create() { this.scene.start('Start'); }
 }
 
 // ─── START SCENE ───────────────────────────────────────────────
@@ -52,7 +65,8 @@ class StartScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
 
-    // Title
+    createStarfield(this);
+
     this.add.text(W / 2, H * 0.30, 'STARS BATTLE', {
       fontSize: '46px',
       fontFamily: 'Arial Black, Arial',
@@ -61,15 +75,12 @@ class StartScene extends Phaser.Scene {
       strokeThickness: 6,
     }).setOrigin(0.5);
 
-    // Subtitle
     this.add.text(W / 2, H * 0.30 + 58, 'Conquer the galaxy', {
       fontSize: '18px',
       fontFamily: 'Arial',
       color: '#888899',
     }).setOrigin(0.5);
 
-    // Difficulty buttons — will be wired up in Phase 17
-    // For now: tap anywhere to start Normal game
     this.add.text(W / 2, H * 0.62, 'TAP TO PLAY', {
       fontSize: '22px',
       fontFamily: 'Arial',
@@ -94,7 +105,9 @@ class GameScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
 
-    // Placeholder — game logic added step by step
+    createStarfield(this);
+
+    // Placeholder text — removed when real game objects arrive
     this.add.text(W / 2, H / 2, 'GAME SCENE', {
       fontSize: '28px',
       fontFamily: 'Arial',
@@ -107,15 +120,12 @@ class GameScene extends Phaser.Scene {
       color: '#888899',
     }).setOrigin(0.5);
 
-    // Back to start on tap (temporary)
     this.input.once('pointerdown', () => {
       this.scene.start('Start');
     });
   }
 
-  update(time, delta) {
-    // Game loop — filled in upcoming steps
-  }
+  update(time, delta) {}
 }
 
 // ─── PHASER CONFIG ─────────────────────────────────────────────
