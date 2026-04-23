@@ -234,6 +234,7 @@ class GameScene extends Phaser.Scene {
     this.routes  = [];
 
     this.ships        = [];
+    this.phase        = 'playing';
     this.aiTimer      = 0;
     this.aiInterval   = DIFFICULTY[this.difficulty].aiInterval;
 
@@ -270,6 +271,7 @@ class GameScene extends Phaser.Scene {
 
   setupInput() {
     this.input.on('pointerdown', (ptr) => {
+      if (this.phase !== 'playing') return;
       const hit = this.starAt(ptr.x, ptr.y);
 
       if (!hit) {
@@ -412,6 +414,75 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── Win / Lose ───────────────────────────────────────────────
+  checkWinLose() {
+    if (this.phase !== 'playing') return;
+
+    const aiAlive = this.stars.some(s => s.owner === OWNER_AI)
+      || this.ships.some(s => s.owner === OWNER_AI)
+      || this.routes.some(r => r.owner === OWNER_AI);
+
+    const playerAlive = this.stars.some(s => s.owner === OWNER_PLAYER)
+      || this.ships.some(s => s.owner === OWNER_PLAYER)
+      || this.routes.some(r => r.owner === OWNER_PLAYER);
+
+    if (!aiAlive)     this.endGame('win');
+    else if (!playerAlive) this.endGame('lose');
+  }
+
+  endGame(result) {
+    this.phase = result;
+    const W = this.scale.width;
+    const H = this.scale.height;
+
+    // Semi-transparent overlay
+    const overlay = this.add.graphics();
+    overlay.fillStyle(0x000000, 0.62);
+    overlay.fillRect(0, 0, W, H);
+
+    const isWin  = result === 'win';
+    const title  = isWin ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ';
+    const color  = isWin ? '#4fc3f7' : '#ef5350';
+
+    this.add.text(W / 2, H * 0.38, title, {
+      fontSize: '52px',
+      fontFamily: 'Arial Black, Arial',
+      color,
+      stroke: '#000000',
+      strokeThickness: 8,
+    }).setOrigin(0.5);
+
+    const sub = this.add.text(W / 2, H * 0.38 + 76, isWin ? 'Галактика завоёвана!' : 'Флот уничтожен', {
+      fontSize: '20px',
+      fontFamily: 'Arial',
+      color: '#aabbcc',
+    }).setOrigin(0.5);
+
+    const replay = this.add.text(W / 2, H * 0.62, 'ИГРАТЬ СНОВА', {
+      fontSize: '24px',
+      fontFamily: 'Arial Black, Arial',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 4,
+      backgroundColor: isWin ? '#1a4a6a' : '#6a1a1a',
+      padding: { x: 24, y: 14 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    // Pulse the replay button
+    this.tweens.add({
+      targets:  replay,
+      alpha:    { from: 0.65, to: 1 },
+      duration: 900,
+      yoyo:     true,
+      repeat:   -1,
+      ease:     'Sine.easeInOut',
+    });
+
+    replay.once('pointerdown', () => {
+      this.scene.restart({ difficulty: this.difficulty });
+    });
+  }
+
   // ── AI ───────────────────────────────────────────────────────
   updateAI(dt) {
     this.aiTimer += dt * 1000;
@@ -489,9 +560,12 @@ class GameScene extends Phaser.Scene {
     }
     this.selPulse += dt;
 
-    this.updateRoutes(dt);
-    this.updateShips(dt);
-    this.updateAI(dt);
+    if (this.phase === 'playing') {
+      this.updateRoutes(dt);
+      this.updateShips(dt);
+      this.updateAI(dt);
+      this.checkWinLose();
+    }
 
     this.drawRoutes();
     this.drawShips();
