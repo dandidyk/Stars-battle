@@ -237,22 +237,26 @@ function routeLineEndpoints(route) {
 function atkPower(star)   { return 1 + star.atkLevel * 0.25; }
 function defFactor(star)  { return 1 / (1 + star.defLevel * 0.25); }
 
-function resolveArrival(ship) {
+function resolveArrival(ship, scene) {
   const target = ship.toStar;
   if (ship.owner === target.owner) {
-    // Friendly reinforcement
     target.units = Math.min(target.units + 1, target.maxUnits);
+    // Small friendly arrival spark
+    scene.fxSpark(ship.x, ship.y, target.owner, 4);
   } else {
-    // Attack: ATK of source owner's star vs DEF of target
     const dmg = atkPower(ship.fromStar) * defFactor(target);
     target.units -= dmg;
     if (target.units < 0) {
       // Capture!
-      target.owner = ship.owner;
-      target.units = Math.abs(target.units);
-      // Reset ATK/DEF on capture (optional but fair)
+      const oldOwner = target.owner;
+      target.owner    = ship.owner;
+      target.units    = Math.abs(target.units);
       target.atkLevel = 0;
       target.defLevel = 0;
+      scene.fxCapture(target, oldOwner);
+    } else {
+      // Hit but not captured
+      scene.fxSpark(target.x, target.y, ship.owner, 6);
     }
   }
 }
@@ -587,7 +591,7 @@ class GameScene extends Phaser.Scene {
       ship.y = ship.fromStar.y + (ship.toStar.y - ship.fromStar.y) * ship.progress;
 
       if (ship.progress >= 1) {
-        resolveArrival(ship);
+        resolveArrival(ship, this);
       } else {
         alive.push(ship);
       }
@@ -673,6 +677,51 @@ class GameScene extends Phaser.Scene {
       const s = this.stars[i];
       this.unitLabels[i].setText(Math.floor(s.units));
       this.unitLabels[i].setY(s.y + s.radius + 12);
+    }
+  }
+
+  // ── Visual FX ────────────────────────────────────────────────
+  fxSpark(x, y, owner, count) {
+    const color = owner === OWNER_PLAYER ? C.PLAYER : (owner === OWNER_AI ? C.AI : C.NEUTRAL);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 30 + Math.random() * 50;
+      const dot   = this.add.circle(x, y, 2, color, 0.9);
+      this.tweens.add({
+        targets:  dot,
+        x:        x + Math.cos(angle) * speed,
+        y:        y + Math.sin(angle) * speed,
+        alpha:    0,
+        duration: 280 + Math.random() * 180,
+        ease:     'Quad.easeOut',
+        onComplete: () => dot.destroy(),
+      });
+    }
+  }
+
+  fxCapture(star, prevOwner) {
+    // Expanding ring
+    const color = star.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
+    const ring  = this.add.graphics();
+    ring.lineStyle(3, color, 0.9);
+    ring.strokeCircle(star.x, star.y, star.radius);
+    this.tweens.add({
+      targets:  ring,
+      scaleX:   2.8,
+      scaleY:   2.8,
+      alpha:    0,
+      duration: 420,
+      ease:     'Quad.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    // Burst of sparks
+    this.fxSpark(star.x, star.y, star.owner, 12);
+
+    // Camera shake — stronger for bigger stars
+    if (star.radius >= 28) {
+      const intensity = Phaser.Math.Clamp((star.radius - 28) / 10 * 0.006, 0.002, 0.008);
+      this.cameras.main.shake(250, intensity);
     }
   }
 
