@@ -234,6 +234,9 @@ class GameScene extends Phaser.Scene {
     this.routes  = [];
 
     this.ships        = [];
+    this.aiTimer      = 0;
+    this.aiInterval   = DIFFICULTY[this.difficulty].aiInterval;
+
     this.routeGfx     = this.add.graphics();
     this.shipGfx      = this.add.graphics();
     this.starGfx      = this.add.graphics();
@@ -409,13 +412,77 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── AI ───────────────────────────────────────────────────────
+  updateAI(dt) {
+    this.aiTimer += dt * 1000;
+    if (this.aiTimer < this.aiInterval) return;
+    this.aiTimer = 0;
+
+    const MAX_AI_ROUTES = 6;
+    const aiStars  = this.stars.filter(s => s.owner === OWNER_AI);
+    const aiRoutes = this.routes.filter(r => r.owner === OWNER_AI);
+
+    // ── Defense: reinforce under-attack stars first ──
+    for (const target of aiStars) {
+      const underAttack = this.ships.some(
+        sh => sh.owner === OWNER_PLAYER && sh.toStar === target
+      );
+      if (underAttack) {
+        const helper = aiStars
+          .filter(s => s !== target && s.units > 15)
+          .sort((a, b) => Math.hypot(a.x - target.x, a.y - target.y) - Math.hypot(b.x - target.x, b.y - target.y))[0];
+        if (helper) {
+          const dup = aiRoutes.find(r => r.fromStar === helper && r.toStar === target);
+          if (!dup && aiRoutes.length < MAX_AI_ROUTES) {
+            this.routes.push(createRoute(OWNER_AI, helper, target));
+          }
+        }
+      }
+    }
+
+    // ── Offense: score targets and attack ──
+    if (aiRoutes.length >= MAX_AI_ROUTES) return;
+
+    // Candidate sources: AI stars with enough units
+    const sources = aiStars.filter(s => s.units >= 12);
+    if (!sources.length) return;
+
+    // Score every non-AI star as a potential target
+    let bestScore = -Infinity;
+    let bestSrc   = null;
+    let bestTgt   = null;
+
+    for (const src of sources) {
+      for (const tgt of this.stars) {
+        if (tgt.owner === OWNER_AI) continue;
+        const dup = this.routes.find(r => r.fromStar === src && r.toStar === tgt && r.owner === OWNER_AI);
+        if (dup) continue;
+
+        const dist      = Math.hypot(src.x - tgt.x, src.y - tgt.y);
+        const weakness  = (tgt.maxUnits - tgt.units) / tgt.maxUnits; // 0=full, 1=empty
+        const proximity = 1 - dist / 1200;
+        const isPlayer  = tgt.owner === OWNER_PLAYER ? 0.4 : 0;
+        const score     = weakness * 1.2 + proximity * 0.8 + isPlayer;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestSrc   = src;
+          bestTgt   = tgt;
+        }
+      }
+    }
+
+    if (bestSrc && bestTgt) {
+      this.routes.push(createRoute(OWNER_AI, bestSrc, bestTgt));
+    }
+  }
+
   // ── Game loop ────────────────────────────────────────────────
   update(time, delta) {
     const dt = delta / 1000;
 
     for (const s of this.stars) {
       s.rotation += s.rotSpeed * dt;
-      // Regen: owned stars grow units up to maxUnits
       if (s.owner !== OWNER_NEUTRAL) {
         s.units = Math.min(s.units + s.regenRate * dt, s.maxUnits);
       }
@@ -424,6 +491,7 @@ class GameScene extends Phaser.Scene {
 
     this.updateRoutes(dt);
     this.updateShips(dt);
+    this.updateAI(dt);
 
     this.drawRoutes();
     this.drawShips();
