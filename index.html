@@ -42,8 +42,10 @@ function createStarfield(scene) {
     const r     = rng.between(1, 10) < 8 ? 0.8 : 1.5;
     const alpha = rng.realInRange(0.25, 0.85);
 
+    // Use individual circle shapes so Tweens can animate alpha
     const dot = scene.add.circle(x, y, r, 0xffffff, alpha);
 
+    // Only ~35% of stars twinkle, keeps it subtle
     if (rng.between(1, 100) <= 35) {
       const dur   = rng.between(1800, 4200);
       const delay = rng.between(0, 3000);
@@ -85,6 +87,7 @@ function drawStarShape(gfx, s) {
   };
   const color = colorMap[s.owner];
 
+  // Glow layers — 3 concentric fills with decreasing alpha
   const glowAlphas = [0.06, 0.12, 0.22];
   const glowScales = [2.2,  1.6,  1.15];
   for (let g = 0; g < 3; g++) {
@@ -93,10 +96,12 @@ function drawStarShape(gfx, s) {
     gfx.fillPoints(glowPts, true);
   }
 
+  // Solid star fill
   const pts = starPolyPoints(s.x, s.y, outerR, innerR, points, s.rotation);
   gfx.fillStyle(color, 1);
   gfx.fillPoints(pts, true);
 
+  // Bright inner core
   gfx.fillStyle(0xffffff, 0.18);
   gfx.fillCircle(s.x, s.y, innerR * 0.55);
 }
@@ -118,6 +123,7 @@ class StartScene extends Phaser.Scene {
 
     createStarfield(this);
 
+    // Title
     this.add.text(W / 2, H * 0.18, 'STARS BATTLE', {
       fontSize: '46px',
       fontFamily: 'Arial Black, Arial',
@@ -139,10 +145,11 @@ class StartScene extends Phaser.Scene {
       letterSpacing: 3,
     }).setOrigin(0.5);
 
+    // Difficulty buttons
     const buttons = [
-      { key: 'easy',   label: 'ЛЕГКО',     sub: '8 звёзд  ·  медленный AI',  color: '#27ae60', bg: 0x0d2b1a },
+      { key: 'easy',   label: 'ЛЕГКО',    sub: '8 звёзд  ·  медленный AI',  color: '#27ae60', bg: 0x0d2b1a },
       { key: 'normal', label: 'НОРМАЛЬНО', sub: '12 звёзд  ·  средний AI',   color: '#4fc3f7', bg: 0x0d1a2b },
-      { key: 'hard',   label: 'СЛОЖНО',    sub: '16 звёзд  ·  быстрый AI',   color: '#ef5350', bg: 0x2b0d0d },
+      { key: 'hard',   label: 'СЛОЖНО',   sub: '16 звёзд  ·  быстрый AI',   color: '#ef5350', bg: 0x2b0d0d },
     ];
 
     const btnW   = Math.min(W * 0.72, 300);
@@ -154,24 +161,28 @@ class StartScene extends Phaser.Scene {
       const cx = W / 2;
       const cy = startY + i * gap;
 
+      // Button background
       const bg = this.add.graphics();
       bg.fillStyle(b.bg, 0.85);
       bg.fillRoundedRect(cx - btnW / 2, cy - btnH / 2, btnW, btnH, 12);
       bg.lineStyle(1.5, Phaser.Display.Color.HexStringToColor(b.color).color, 0.6);
       bg.strokeRoundedRect(cx - btnW / 2, cy - btnH / 2, btnW, btnH, 12);
 
+      // Label
       this.add.text(cx, cy - 10, b.label, {
         fontSize: '22px',
         fontFamily: 'Arial Black, Arial',
         color: b.color,
       }).setOrigin(0.5);
 
+      // Sub-label
       this.add.text(cx, cy + 16, b.sub, {
         fontSize: '13px',
         fontFamily: 'Arial',
         color: '#778899',
       }).setOrigin(0.5);
 
+      // Invisible hit zone
       const zone = this.add.zone(cx, cy, btnW, btnH).setInteractive({ useHandCursor: true });
 
       zone.on('pointerover', () => {
@@ -230,37 +241,40 @@ function resolveArrival(ship, scene) {
   const target = ship.toStar;
   if (ship.owner === target.owner) {
     target.units = Math.min(target.units + 1, target.maxUnits);
+    // Small friendly arrival spark
     scene.fxSpark(ship.x, ship.y, target.owner, 4);
   } else {
     const dmg = atkPower(ship.fromStar) * defFactor(target);
     target.units -= dmg;
     if (target.units < 0) {
-      const oldOwner  = target.owner;
+      // Capture!
+      const oldOwner = target.owner;
       target.owner    = ship.owner;
       target.units    = Math.abs(target.units);
       target.atkLevel = 0;
       target.defLevel = 0;
       scene.fxCapture(target, oldOwner);
     } else {
+      // Hit but not captured
       scene.fxSpark(target.x, target.y, ship.owner, 6);
     }
   }
 }
 
 // ─── SHIP HELPERS ──────────────────────────────────────────────
-const SHIP_SPEED = 120;
+const SHIP_SPEED = 120; // px/sec
 let   shipCounter = 0;
 
 function createShip(owner, fromStar, toStar) {
   const angle = Math.atan2(toStar.y - fromStar.y, toStar.x - fromStar.x);
   return {
-    id:        shipCounter++,
+    id:       shipCounter++,
     owner,
     fromStar,
     toStar,
-    x:         fromStar.x,
-    y:         fromStar.y,
-    progress:  0,
+    x:        fromStar.x,
+    y:        fromStar.y,
+    progress: 0,
     angle,
     totalDist: Math.hypot(toStar.x - fromStar.x, toStar.y - fromStar.y),
   };
@@ -282,8 +296,10 @@ function createRoute(owner, fromStar, toStar) {
 }
 
 function routeIsDead(route) {
+  // Source changed owner
   if (route.fromStar.owner !== route.owner) return true;
-  if (route.toStar.owner === route.owner)   return true;
+  // Target already belongs to owner
+  if (route.toStar.owner === route.owner) return true;
   return false;
 }
 
@@ -314,7 +330,7 @@ class GameScene extends Phaser.Scene {
     this.dragPos      = null;
     this.dragMoved    = false;
     this.dragOrigin   = null;
-    this.swipePath    = null;
+    this.swipePath    = null;  // [{x,y}] trail for swipe-cut gesture
 
     this.routeGfx     = this.add.graphics();
     this.dragGfx      = this.add.graphics();
@@ -342,7 +358,7 @@ class GameScene extends Phaser.Scene {
   }
 
   createHUD() {
-    const W   = this.scale.width;
+    const W = this.scale.width;
     const pad = 16;
     const style = (color) => ({
       fontSize: '15px',
@@ -351,23 +367,31 @@ class GameScene extends Phaser.Scene {
       stroke: '#000000',
       strokeThickness: 3,
     });
-    this.hudPlayerStars  = this.add.text(pad, pad,      '', style('#4fc3f7'));
+
+    // Player: top-left
+    this.hudPlayerStars = this.add.text(pad, pad, '', style('#4fc3f7'));
     this.hudPlayerRoutes = this.add.text(pad, pad + 22, '', style('#4fc3f7'));
-    this.hudAIStars  = this.add.text(W - pad, pad,      '', { ...style('#ef5350'), align: 'right' }).setOrigin(1, 0);
-    this.hudAIRoutes = this.add.text(W - pad, pad + 22, '', { ...style('#ef5350'), align: 'right' }).setOrigin(1, 0);
+
+    // AI: top-right
+    this.hudAIStars = this.add.text(W - pad, pad, '', { ...style('#ef5350'), align: 'right' })
+      .setOrigin(1, 0);
+    this.hudAIRoutes = this.add.text(W - pad, pad + 22, '', { ...style('#ef5350'), align: 'right' })
+      .setOrigin(1, 0);
   }
 
   updateHUD() {
-    const pS = this.stars.filter(s => s.owner === OWNER_PLAYER).length;
-    const aS = this.stars.filter(s => s.owner === OWNER_AI).length;
-    const pR = this.routes.filter(r => r.owner === OWNER_PLAYER).length;
-    const aR = this.routes.filter(r => r.owner === OWNER_AI).length;
-    this.hudPlayerStars.setText(`★ ${pS}`);
-    this.hudPlayerRoutes.setText(`→ ${pR}`);
-    this.hudAIStars.setText(`${aS} ★`);
-    this.hudAIRoutes.setText(`${aR} ←`);
+    const playerStars  = this.stars.filter(s => s.owner === OWNER_PLAYER).length;
+    const aiStars      = this.stars.filter(s => s.owner === OWNER_AI).length;
+    const playerRoutes = this.routes.filter(r => r.owner === OWNER_PLAYER).length;
+    const aiRoutes     = this.routes.filter(r => r.owner === OWNER_AI).length;
+
+    this.hudPlayerStars.setText(`★ ${playerStars}`);
+    this.hudPlayerRoutes.setText(`→ ${playerRoutes}`);
+    this.hudAIStars.setText(`${aiStars} ★`);
+    this.hudAIRoutes.setText(`${aiRoutes} ←`);
   }
 
+  // ── Input ────────────────────────────────────────────────────
   starAt(x, y) {
     for (const s of this.stars) {
       if (Math.hypot(x - s.x, y - s.y) <= s.radius + 8) return s;
@@ -376,7 +400,7 @@ class GameScene extends Phaser.Scene {
   }
 
   setupInput() {
-    const DRAG_THRESHOLD = 16;
+    const DRAG_THRESHOLD = 16; // px before considered a drag
 
     this.input.on('pointerdown', (ptr) => {
       if (this.phase !== 'playing') return;
@@ -389,6 +413,7 @@ class GameScene extends Phaser.Scene {
         this.dragPos   = { x: ptr.x, y: ptr.y };
         this.swipePath = null;
       } else {
+        // Starting on empty space or enemy → potential swipe
         this.dragFrom  = null;
         this.swipePath = [{ x: ptr.x, y: ptr.y }];
       }
@@ -410,9 +435,15 @@ class GameScene extends Phaser.Scene {
       if (this.phase !== 'playing') return;
       const hit = this.starAt(ptr.x, ptr.y);
 
+      // ── Swipe-cut check ──
       if (this.swipePath && this.swipePath.length >= 2) {
-        const swipeDist = Math.hypot(ptr.x - this.swipePath[0].x, ptr.y - this.swipePath[0].y);
-        if (swipeDist > 40) this.cutRoutesAlongSwipe();
+        const swipeDist = Math.hypot(
+          ptr.x - this.swipePath[0].x,
+          ptr.y - this.swipePath[0].y
+        );
+        if (swipeDist > 40) {
+          this.cutRoutesAlongSwipe();
+        }
         this.swipePath = null;
         return;
       }
@@ -420,10 +451,15 @@ class GameScene extends Phaser.Scene {
 
       if (this.dragFrom) {
         if (this.dragMoved) {
-          if (hit && hit !== this.dragFrom) this.tryCreateRoute(this.dragFrom, hit);
-          this.dragFrom = null; this.dragPos = null; this.dragMoved = false;
+          if (hit && hit !== this.dragFrom) {
+            this.tryCreateRoute(this.dragFrom, hit);
+          }
+          this.dragFrom  = null;
+          this.dragPos   = null;
+          this.dragMoved = false;
           return;
         }
+        // Tap
         if (!hit) {
           this.selectedStar = null;
         } else if (hit.owner === OWNER_PLAYER) {
@@ -433,7 +469,9 @@ class GameScene extends Phaser.Scene {
           this.tryCreateRoute(this.selectedStar, hit);
           this.selectedStar = null;
         }
-        this.dragFrom = null; this.dragPos = null; this.dragMoved = false;
+        this.dragFrom  = null;
+        this.dragPos   = null;
+        this.dragMoved = false;
         return;
       }
 
@@ -443,46 +481,70 @@ class GameScene extends Phaser.Scene {
 
   tryCreateRoute(from, to) {
     if (to.owner === OWNER_PLAYER) return;
-    const dup = this.routes.find(r => r.fromStar === from && r.toStar === to && r.owner === OWNER_PLAYER);
+    const dup = this.routes.find(
+      r => r.fromStar === from && r.toStar === to && r.owner === OWNER_PLAYER
+    );
     if (!dup) this.routes.push(createRoute(OWNER_PLAYER, from, to));
   }
 
   cutRoutesAlongSwipe() {
     const path = this.swipePath;
     if (!path || path.length < 2) return;
+
+    // Check every consecutive pair of swipe points against every player route
     const cut = new Set();
     for (let i = 0; i < path.length - 1; i++) {
       const sx1 = path[i].x,   sy1 = path[i].y;
       const sx2 = path[i+1].x, sy2 = path[i+1].y;
+
       for (const route of this.routes) {
         if (route.owner !== OWNER_PLAYER) continue;
         const { x1, y1, x2, y2 } = routeLineEndpoints(route);
-        if (segmentsIntersect(sx1, sy1, sx2, sy2, x1, y1, x2, y2)) cut.add(route);
+        if (segmentsIntersect(sx1, sy1, sx2, sy2, x1, y1, x2, y2)) {
+          cut.add(route);
+        }
       }
     }
+
     if (cut.size === 0) return;
+
+    // Flash the cut lines then remove
     for (const route of cut) {
       const { x1, y1, x2, y2 } = routeLineEndpoints(route);
       const flash = this.add.graphics();
       flash.lineStyle(3, 0xffffff, 0.9);
-      flash.beginPath(); flash.moveTo(x1, y1); flash.lineTo(x2, y2); flash.strokePath();
-      this.tweens.add({ targets: flash, alpha: 0, duration: 220, onComplete: () => flash.destroy() });
+      flash.beginPath();
+      flash.moveTo(x1, y1);
+      flash.lineTo(x2, y2);
+      flash.strokePath();
+      this.tweens.add({
+        targets: flash, alpha: 0, duration: 220,
+        onComplete: () => flash.destroy(),
+      });
     }
+
     this.routes = this.routes.filter(r => !cut.has(r));
   }
 
+  // ── Drag visual ─────────────────────────────────────────────
   drawDrag() {
     this.dragGfx.clear();
     if (!this.dragFrom || !this.dragPos || !this.dragMoved) return;
+
     const s  = this.dragFrom;
     const tx = this.dragPos.x;
     const ty = this.dragPos.y;
     const angle = Math.atan2(ty - s.y, tx - s.x);
     const x1 = s.x + Math.cos(angle) * s.radius;
     const y1 = s.y + Math.sin(angle) * s.radius;
-    const dx = tx - x1, dy = ty - y1;
+
+    // Dashed line to finger
+    const dx  = tx - x1;
+    const dy  = ty - y1;
     const len = Math.hypot(dx, dy);
-    const ux = dx / len, uy = dy / len;
+    const ux  = dx / len;
+    const uy  = dy / len;
+
     this.dragGfx.lineStyle(2, C.PLAYER, 0.7);
     const dash = 10, gap = 6, cycle = dash + gap;
     let pos = 0;
@@ -494,19 +556,24 @@ class GameScene extends Phaser.Scene {
       this.dragGfx.strokePath();
       pos += cycle;
     }
-    const hitStar  = this.starAt(tx, ty);
+
+    // Small circle at finger tip
+    const hitStar = this.starAt(tx, ty);
     const dotColor = (hitStar && hitStar !== s) ? C.PLAYER : 0xffffff;
     this.dragGfx.fillStyle(dotColor, 0.8);
     this.dragGfx.fillCircle(tx, ty, 5);
   }
 
+  // ── Routes ───────────────────────────────────────────────────
   updateRoutes(dt) {
     this.routes = this.routes.filter(r => !routeIsDead(r));
     for (const r of this.routes) {
       r.dashOffset    += 40 * dt;
-      r.dispatchTimer += dt * 1000;
+      r.dispatchTimer += dt * 1000; // ms
+
       if (r.dispatchTimer >= ROUTE_DISPATCH_MS) {
         r.dispatchTimer = 0;
+        // Only dispatch if source has enough units
         if (r.fromStar.units >= 2) {
           r.fromStar.units -= 1;
           this.ships.push(createShip(r.owner, r.fromStar, r.toStar));
@@ -515,12 +582,14 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── Ships ────────────────────────────────────────────────────
   updateShips(dt) {
     const alive = [];
     for (const ship of this.ships) {
       ship.progress += (SHIP_SPEED * dt) / ship.totalDist;
       ship.x = ship.fromStar.x + (ship.toStar.x - ship.fromStar.x) * ship.progress;
       ship.y = ship.fromStar.y + (ship.toStar.y - ship.fromStar.y) * ship.progress;
+
       if (ship.progress >= 1) {
         resolveArrival(ship, this);
       } else {
@@ -536,9 +605,10 @@ class GameScene extends Phaser.Scene {
     for (const ship of this.ships) {
       const color = ship.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
       const a     = ship.angle;
-      const tip   = { x: ship.x + Math.cos(a) * size,            y: ship.y + Math.sin(a) * size };
-      const left  = { x: ship.x + Math.cos(a + 2.4) * size * 0.65, y: ship.y + Math.sin(a + 2.4) * size * 0.65 };
-      const right = { x: ship.x + Math.cos(a - 2.4) * size * 0.65, y: ship.y + Math.sin(a - 2.4) * size * 0.65 };
+      // Triangle pointing in direction of travel
+      const tip  = { x: ship.x + Math.cos(a) * size,       y: ship.y + Math.sin(a) * size };
+      const left = { x: ship.x + Math.cos(a + 2.4) * size * 0.65, y: ship.y + Math.sin(a + 2.4) * size * 0.65 };
+      const right= { x: ship.x + Math.cos(a - 2.4) * size * 0.65, y: ship.y + Math.sin(a - 2.4) * size * 0.65 };
       this.shipGfx.fillStyle(color, 0.92);
       this.shipGfx.fillTriangle(tip.x, tip.y, left.x, left.y, right.x, right.y);
     }
@@ -548,12 +618,27 @@ class GameScene extends Phaser.Scene {
     this.routeGfx.clear();
     for (const r of this.routes) {
       const color = r.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
-      const { x1, y1, x2, y2 } = routeLineEndpoints(r);
-      const ux = (x2 - x1) / Math.hypot(x2 - x1, y2 - y1);
-      const uy = (y2 - y1) / Math.hypot(x2 - x1, y2 - y1);
-      const segLen = Math.hypot(x2 - x1, y2 - y1);
-      const dashLen = 10, gapLen = 6, cycle = dashLen + gapLen;
-      const offset = r.dashOffset % cycle;
+      const from  = r.fromStar;
+      const to    = r.toStar;
+      const dx    = to.x - from.x;
+      const dy    = to.y - from.y;
+      const len   = Math.hypot(dx, dy);
+      const ux    = dx / len;
+      const uy    = dy / len;
+
+      // Start/end at star edges
+      const x1 = from.x + ux * from.radius;
+      const y1 = from.y + uy * from.radius;
+      const x2 = to.x   - ux * to.radius;
+      const y2 = to.y   - uy * to.radius;
+
+      // Draw animated dashed line
+      const dashLen  = 10;
+      const gapLen   = 6;
+      const cycle    = dashLen + gapLen;
+      const segLen   = Math.hypot(x2 - x1, y2 - y1);
+      const offset   = r.dashOffset % cycle;
+
       this.routeGfx.lineStyle(1.5, color, 0.55);
       let pos = -offset;
       while (pos < segLen) {
@@ -570,6 +655,7 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── Stars ────────────────────────────────────────────────────
   drawSelection() {
     this.selectionGfx.clear();
     if (!this.selectedStar) return;
@@ -584,7 +670,9 @@ class GameScene extends Phaser.Scene {
 
   drawStars() {
     this.starGfx.clear();
-    for (const s of this.stars) drawStarShape(this.starGfx, s);
+    for (const s of this.stars) {
+      drawStarShape(this.starGfx, s);
+    }
     for (let i = 0; i < this.stars.length; i++) {
       const s = this.stars[i];
       this.unitLabels[i].setText(Math.floor(s.units));
@@ -592,6 +680,7 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // ── Visual FX ────────────────────────────────────────────────
   fxSpark(x, y, owner, count) {
     const color = owner === OWNER_PLAYER ? C.PLAYER : (owner === OWNER_AI ? C.AI : C.NEUTRAL);
     for (let i = 0; i < count; i++) {
@@ -611,30 +700,44 @@ class GameScene extends Phaser.Scene {
   }
 
   fxCapture(star, prevOwner) {
+    // Expanding ring
     const color = star.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
     const ring  = this.add.graphics();
     ring.lineStyle(3, color, 0.9);
     ring.strokeCircle(star.x, star.y, star.radius);
     this.tweens.add({
-      targets: ring, scaleX: 2.8, scaleY: 2.8, alpha: 0, duration: 420,
-      ease: 'Quad.easeOut', onComplete: () => ring.destroy(),
+      targets:  ring,
+      scaleX:   2.8,
+      scaleY:   2.8,
+      alpha:    0,
+      duration: 420,
+      ease:     'Quad.easeOut',
+      onComplete: () => ring.destroy(),
     });
+
+    // Burst of sparks
     this.fxSpark(star.x, star.y, star.owner, 12);
+
+    // Camera shake — stronger for bigger stars
     if (star.radius >= 28) {
       const intensity = Phaser.Math.Clamp((star.radius - 28) / 10 * 0.006, 0.002, 0.008);
       this.cameras.main.shake(250, intensity);
     }
   }
 
+  // ── Win / Lose ───────────────────────────────────────────────
   checkWinLose() {
     if (this.phase !== 'playing') return;
-    const aiAlive     = this.stars.some(s => s.owner === OWNER_AI)
+
+    const aiAlive = this.stars.some(s => s.owner === OWNER_AI)
       || this.ships.some(s => s.owner === OWNER_AI)
       || this.routes.some(r => r.owner === OWNER_AI);
+
     const playerAlive = this.stars.some(s => s.owner === OWNER_PLAYER)
       || this.ships.some(s => s.owner === OWNER_PLAYER)
       || this.routes.some(r => r.owner === OWNER_PLAYER);
-    if (!aiAlive)          this.endGame('win');
+
+    if (!aiAlive)     this.endGame('win');
     else if (!playerAlive) this.endGame('lose');
   }
 
@@ -642,78 +745,139 @@ class GameScene extends Phaser.Scene {
     this.phase = result;
     const W = this.scale.width;
     const H = this.scale.height;
+
+    // Semi-transparent overlay
     const overlay = this.add.graphics();
     overlay.fillStyle(0x000000, 0.62);
     overlay.fillRect(0, 0, W, H);
-    const isWin = result === 'win';
-    this.add.text(W / 2, H * 0.38, isWin ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ', {
-      fontSize: '52px', fontFamily: 'Arial Black, Arial',
-      color: isWin ? '#4fc3f7' : '#ef5350',
-      stroke: '#000000', strokeThickness: 8,
+
+    const isWin  = result === 'win';
+    const title  = isWin ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ';
+    const color  = isWin ? '#4fc3f7' : '#ef5350';
+
+    this.add.text(W / 2, H * 0.38, title, {
+      fontSize: '52px',
+      fontFamily: 'Arial Black, Arial',
+      color,
+      stroke: '#000000',
+      strokeThickness: 8,
     }).setOrigin(0.5);
-    this.add.text(W / 2, H * 0.38 + 76, isWin ? 'Галактика завоёвана!' : 'Флот уничтожен', {
-      fontSize: '20px', fontFamily: 'Arial', color: '#aabbcc',
+
+    const sub = this.add.text(W / 2, H * 0.38 + 76, isWin ? 'Галактика завоёвана!' : 'Флот уничтожен', {
+      fontSize: '20px',
+      fontFamily: 'Arial',
+      color: '#aabbcc',
     }).setOrigin(0.5);
+
     const replay = this.add.text(W / 2, H * 0.62, 'ИГРАТЬ СНОВА', {
-      fontSize: '24px', fontFamily: 'Arial Black, Arial', color: '#ffffff',
-      stroke: '#000000', strokeThickness: 4,
+      fontSize: '24px',
+      fontFamily: 'Arial Black, Arial',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 4,
       backgroundColor: isWin ? '#1a4a6a' : '#6a1a1a',
       padding: { x: 24, y: 14 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    this.tweens.add({ targets: replay, alpha: { from: 0.65, to: 1 }, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    replay.once('pointerdown', () => this.scene.restart({ difficulty: this.difficulty }));
+
+    // Pulse the replay button
+    this.tweens.add({
+      targets:  replay,
+      alpha:    { from: 0.65, to: 1 },
+      duration: 900,
+      yoyo:     true,
+      repeat:   -1,
+      ease:     'Sine.easeInOut',
+    });
+
+    replay.once('pointerdown', () => {
+      this.scene.restart({ difficulty: this.difficulty });
+    });
   }
 
+  // ── AI ───────────────────────────────────────────────────────
   updateAI(dt) {
     this.aiTimer += dt * 1000;
     if (this.aiTimer < this.aiInterval) return;
     this.aiTimer = 0;
+
     const MAX_AI_ROUTES = 6;
     const aiStars  = this.stars.filter(s => s.owner === OWNER_AI);
     const aiRoutes = this.routes.filter(r => r.owner === OWNER_AI);
+
+    // ── Defense: reinforce under-attack stars first ──
     for (const target of aiStars) {
-      const underAttack = this.ships.some(sh => sh.owner === OWNER_PLAYER && sh.toStar === target);
+      const underAttack = this.ships.some(
+        sh => sh.owner === OWNER_PLAYER && sh.toStar === target
+      );
       if (underAttack) {
         const helper = aiStars
           .filter(s => s !== target && s.units > 15)
-          .sort((a, b) => Math.hypot(a.x-target.x,a.y-target.y) - Math.hypot(b.x-target.x,b.y-target.y))[0];
+          .sort((a, b) => Math.hypot(a.x - target.x, a.y - target.y) - Math.hypot(b.x - target.x, b.y - target.y))[0];
         if (helper) {
           const dup = aiRoutes.find(r => r.fromStar === helper && r.toStar === target);
-          if (!dup && aiRoutes.length < MAX_AI_ROUTES) this.routes.push(createRoute(OWNER_AI, helper, target));
+          if (!dup && aiRoutes.length < MAX_AI_ROUTES) {
+            this.routes.push(createRoute(OWNER_AI, helper, target));
+          }
         }
       }
     }
+
+    // ── Offense: score targets and attack ──
     if (aiRoutes.length >= MAX_AI_ROUTES) return;
+
+    // Candidate sources: AI stars with enough units
     const sources = aiStars.filter(s => s.units >= 12);
     if (!sources.length) return;
-    let bestScore = -Infinity, bestSrc = null, bestTgt = null;
+
+    // Score every non-AI star as a potential target
+    let bestScore = -Infinity;
+    let bestSrc   = null;
+    let bestTgt   = null;
+
     for (const src of sources) {
       for (const tgt of this.stars) {
         if (tgt.owner === OWNER_AI) continue;
         const dup = this.routes.find(r => r.fromStar === src && r.toStar === tgt && r.owner === OWNER_AI);
         if (dup) continue;
-        const dist     = Math.hypot(src.x - tgt.x, src.y - tgt.y);
-        const weakness = (tgt.maxUnits - tgt.units) / tgt.maxUnits;
-        const score    = weakness * 1.2 + (1 - dist / 1200) * 0.8 + (tgt.owner === OWNER_PLAYER ? 0.4 : 0);
-        if (score > bestScore) { bestScore = score; bestSrc = src; bestTgt = tgt; }
+
+        const dist      = Math.hypot(src.x - tgt.x, src.y - tgt.y);
+        const weakness  = (tgt.maxUnits - tgt.units) / tgt.maxUnits; // 0=full, 1=empty
+        const proximity = 1 - dist / 1200;
+        const isPlayer  = tgt.owner === OWNER_PLAYER ? 0.4 : 0;
+        const score     = weakness * 1.2 + proximity * 0.8 + isPlayer;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestSrc   = src;
+          bestTgt   = tgt;
+        }
       }
     }
-    if (bestSrc && bestTgt) this.routes.push(createRoute(OWNER_AI, bestSrc, bestTgt));
+
+    if (bestSrc && bestTgt) {
+      this.routes.push(createRoute(OWNER_AI, bestSrc, bestTgt));
+    }
   }
 
+  // ── Game loop ────────────────────────────────────────────────
   update(time, delta) {
     const dt = delta / 1000;
+
     for (const s of this.stars) {
       s.rotation += s.rotSpeed * dt;
-      if (s.owner !== OWNER_NEUTRAL) s.units = Math.min(s.units + s.regenRate * dt, s.maxUnits);
+      if (s.owner !== OWNER_NEUTRAL) {
+        s.units = Math.min(s.units + s.regenRate * dt, s.maxUnits);
+      }
     }
     this.selPulse += dt;
+
     if (this.phase === 'playing') {
       this.updateRoutes(dt);
       this.updateShips(dt);
       this.updateAI(dt);
       this.checkWinLose();
     }
+
     this.drawDrag();
     this.drawRoutes();
     this.drawShips();
@@ -735,21 +899,34 @@ const OWNER_AI      =  1;
 
 function buildStar(id, x, y, radius, owner) {
   const maxUnits  = Math.round(radius * 3);
-  const regenRate = radius * 0.8 / STAR_RADIUS_MAX;
-  const units = (owner === OWNER_PLAYER || owner === OWNER_AI)
-    ? Math.round(radius * 1.5)
-    : Math.round(radius * 0.8);
+  const regenRate = radius * 0.8 / STAR_RADIUS_MAX; // units/sec
+  let units;
+  if (owner === OWNER_PLAYER || owner === OWNER_AI) {
+    units = Math.round(radius * 1.5);
+  } else {
+    units = Math.round(radius * 0.8); // small neutral garrison
+  }
   return {
-    id, x, y, radius, owner, units, regenRate, maxUnits,
-    atkLevel: 0, defLevel: 0, rotation: 0,
+    id,
+    x, y,
+    radius,
+    owner,
+    units,
+    regenRate,
+    maxUnits,
+    atkLevel: 0,
+    defLevel: 0,
+    rotation: 0,
     rotSpeed: (Math.random() * 0.3 + 0.1) * (Math.random() < 0.5 ? 1 : -1),
   };
 }
 
 function generateStars(W, H, count) {
-  const rng   = new Phaser.Math.RandomDataGenerator([`map_${count}_${W}`]);
-  const pts   = [];
-  const tries = 800;
+  const rng    = new Phaser.Math.RandomDataGenerator([`map_${count}_${W}`]);
+  const pts    = [];
+  const tries  = 800;
+
+  // Generate positions with rejection sampling
   for (let i = 0; i < count; i++) {
     const r = rng.between(STAR_RADIUS_MIN, STAR_RADIUS_MAX);
     for (let t = 0; t < tries; t++) {
@@ -762,10 +939,14 @@ function generateStars(W, H, count) {
       if (ok) { pts.push({ x, y, r }); break; }
     }
   }
+
+  // Assign player = largest star in left half, AI = largest in right half
   const leftPts  = pts.filter(p => p.x < W / 2).sort((a, b) => b.r - a.r);
   const rightPts = pts.filter(p => p.x >= W / 2).sort((a, b) => b.r - a.r);
+
   const playerPt = leftPts[0];
   const aiPt     = rightPts[0];
+
   return pts.map((p, i) => {
     let owner = OWNER_NEUTRAL;
     if (p === playerPt) owner = OWNER_PLAYER;
@@ -775,6 +956,8 @@ function generateStars(W, H, count) {
 }
 
 // ─── PHASER CONFIG ─────────────────────────────────────────────
+const _dpr = Math.min(window.devicePixelRatio || 1, 2);
+
 const config = {
   type: Phaser.AUTO,
   backgroundColor: '#0d0d1a',
@@ -782,13 +965,11 @@ const config = {
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    zoom: _dpr,
   },
   render: {
     antialias: true,
     pixelArt: false,
-    resolution: Math.min(window.devicePixelRatio || 1, 2),
   },
   input: {
     activePointers: 3,
