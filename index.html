@@ -297,7 +297,13 @@ class GameScene extends Phaser.Scene {
     this.aiTimer      = 0;
     this.aiInterval   = DIFFICULTY[this.difficulty].aiInterval;
 
+    this.dragFrom     = null;  // star being dragged from
+    this.dragPos      = null;  // current pointer position during drag
+    this.dragMoved    = false; // did pointer move enough to count as drag?
+    this.dragOrigin   = null;  // where pointer went down
+
     this.routeGfx     = this.add.graphics();
+    this.dragGfx      = this.add.graphics();
     this.shipGfx      = this.add.graphics();
     this.starGfx      = this.add.graphics();
     this.selectionGfx = this.add.graphics();
@@ -364,32 +370,110 @@ class GameScene extends Phaser.Scene {
   }
 
   setupInput() {
+    const DRAG_THRESHOLD = 16; // px before considered a drag
+
     this.input.on('pointerdown', (ptr) => {
       if (this.phase !== 'playing') return;
       const hit = this.starAt(ptr.x, ptr.y);
+      this.dragOrigin = { x: ptr.x, y: ptr.y };
+      this.dragMoved  = false;
 
-      if (!hit) {
-        this.selectedStar = null;
-        return;
-      }
-
-      if (hit.owner === OWNER_PLAYER) {
-        this.selectedStar = (this.selectedStar === hit) ? null : hit;
-        this.selPulse = 0;
-        return;
-      }
-
-      if (this.selectedStar && hit !== this.selectedStar) {
-        // Check no duplicate route already exists
-        const dup = this.routes.find(
-          r => r.fromStar === this.selectedStar && r.toStar === hit && r.owner === OWNER_PLAYER
-        );
-        if (!dup) {
-          this.routes.push(createRoute(OWNER_PLAYER, this.selectedStar, hit));
-        }
-        this.selectedStar = null;
+      if (hit && hit.owner === OWNER_PLAYER) {
+        this.dragFrom = hit;
+        this.dragPos  = { x: ptr.x, y: ptr.y };
       }
     });
+
+    this.input.on('pointermove', (ptr) => {
+      if (!this.dragFrom) return;
+      this.dragPos = { x: ptr.x, y: ptr.y };
+      if (!this.dragMoved) {
+        const d = Math.hypot(ptr.x - this.dragOrigin.x, ptr.y - this.dragOrigin.y);
+        if (d > DRAG_THRESHOLD) this.dragMoved = true;
+      }
+    });
+
+    this.input.on('pointerup', (ptr) => {
+      if (this.phase !== 'playing') return;
+      const hit = this.starAt(ptr.x, ptr.y);
+
+      if (this.dragFrom) {
+        if (this.dragMoved) {
+          // ── Drag released ──
+          if (hit && hit !== this.dragFrom) {
+            this.tryCreateRoute(this.dragFrom, hit);
+          }
+          this.dragFrom   = null;
+          this.dragPos    = null;
+          this.dragMoved  = false;
+          return;
+        }
+
+        // ── It was a tap (no significant movement) ──
+        if (!hit) {
+          this.selectedStar = null;
+        } else if (hit.owner === OWNER_PLAYER) {
+          this.selectedStar = (this.selectedStar === hit) ? null : hit;
+          this.selPulse = 0;
+        } else if (this.selectedStar) {
+          this.tryCreateRoute(this.selectedStar, hit);
+          this.selectedStar = null;
+        }
+        this.dragFrom  = null;
+        this.dragPos   = null;
+        this.dragMoved = false;
+        return;
+      }
+
+      // Tapped with no dragFrom — deselect on empty space
+      if (!hit) this.selectedStar = null;
+    });
+  }
+
+  tryCreateRoute(from, to) {
+    if (to.owner === OWNER_PLAYER) return;
+    const dup = this.routes.find(
+      r => r.fromStar === from && r.toStar === to && r.owner === OWNER_PLAYER
+    );
+    if (!dup) this.routes.push(createRoute(OWNER_PLAYER, from, to));
+  }
+
+  // ── Drag visual ─────────────────────────────────────────────
+  drawDrag() {
+    this.dragGfx.clear();
+    if (!this.dragFrom || !this.dragPos || !this.dragMoved) return;
+
+    const s  = this.dragFrom;
+    const tx = this.dragPos.x;
+    const ty = this.dragPos.y;
+    const angle = Math.atan2(ty - s.y, tx - s.x);
+    const x1 = s.x + Math.cos(angle) * s.radius;
+    const y1 = s.y + Math.sin(angle) * s.radius;
+
+    // Dashed line to finger
+    const dx  = tx - x1;
+    const dy  = ty - y1;
+    const len = Math.hypot(dx, dy);
+    const ux  = dx / len;
+    const uy  = dy / len;
+
+    this.dragGfx.lineStyle(2, C.PLAYER, 0.7);
+    const dash = 10, gap = 6, cycle = dash + gap;
+    let pos = 0;
+    while (pos < len) {
+      const end = Math.min(pos + dash, len);
+      this.dragGfx.beginPath();
+      this.dragGfx.moveTo(x1 + ux * pos, y1 + uy * pos);
+      this.dragGfx.lineTo(x1 + ux * end, y1 + uy * end);
+      this.dragGfx.strokePath();
+      pos += cycle;
+    }
+
+    // Small circle at finger tip
+    const hitStar = this.starAt(tx, ty);
+    const dotColor = (hitStar && hitStar !== s) ? C.PLAYER : 0xffffff;
+    this.dragGfx.fillStyle(dotColor, 0.8);
+    this.dragGfx.fillCircle(tx, ty, 5);
   }
 
   // ── Routes ───────────────────────────────────────────────────
@@ -661,6 +745,7 @@ class GameScene extends Phaser.Scene {
       this.checkWinLose();
     }
 
+    this.drawDrag();
     this.drawRoutes();
     this.drawShips();
     this.drawStars();
