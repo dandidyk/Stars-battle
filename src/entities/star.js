@@ -4,14 +4,13 @@ import {
   STAR_RADIUS_MIN, STAR_RADIUS_MAX, STAR_MARGIN, STAR_MIN_GAP,
 } from '../constants.js';
 
-export function buildStar(id, x, y, radius, owner) {
+export function buildStar(id, x, y, radius, owner, startUnitsMult = 1.2, regenMult = 1.0) {
   const maxUnits  = Math.round(radius * 2.5);
   const maxHp     = Math.round(radius * 2);
-  const regenRate = radius * 0.7 / STAR_RADIUS_MAX; // troops/sec
-  const hpRegen   = radius * 0.15 / STAR_RADIUS_MAX; // hp/sec (slower)
-  const units = (owner === OWNER_PLAYER || owner === OWNER_AI)
-    ? Math.round(radius * 1.2)
-    : Math.round(radius * 0.5);
+  const regenRate = radius * 0.7 / STAR_RADIUS_MAX * regenMult;
+  const hpRegen   = radius * 0.15 / STAR_RADIUS_MAX * regenMult;
+  const baseMult  = (owner === OWNER_PLAYER || owner === OWNER_AI) ? startUnitsMult : startUnitsMult * 0.4;
+  const units     = Math.min(Math.round(radius * baseMult), maxUnits);
   return {
     id,
     x, y,
@@ -31,7 +30,7 @@ export function buildStar(id, x, y, radius, owner) {
   };
 }
 
-export function generateStars(W, H, count) {
+export function generateStars(W, H, count, startUnitsMult = 1.2, regenMult = 1.0) {
   const rng   = new Phaser.Math.RandomDataGenerator([`map_${count}_${W}`]);
   const pts   = [];
   const tries = 800;
@@ -58,6 +57,6 @@ export function generateStars(W, H, count) {
     let owner = OWNER_NEUTRAL;
     if (p === playerPt) owner = OWNER_PLAYER;
     if (p === aiPt)     owner = OWNER_AI;
-    return buildStar(i, p.x, p.y, p.r, owner);
+    return buildStar(i, p.x, p.y, p.r, owner, startUnitsMult, regenMult);
   });
 }

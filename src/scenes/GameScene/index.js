@@ -9,14 +9,19 @@ import { updateAI } from '../../ai/basicAI.js';
 import { setupInput } from './input.js';
 import { drawStars, drawShips, drawDrag, drawSelection, drawRoutes } from './draw.js';
 import { createHUD, updateHUD } from './hud.js';
-import { fxSpark, fxCapture } from './fx.js';
+import { fxSpark, fxCapture, fxIntercept } from './fx.js';
 import { createDebugOverlay, updateDebugOverlay, debugLog } from './debug.js';
 
 export default class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
 
   init(data) {
-    this.difficulty = data.difficulty || 'normal';
+    if (data.config) {
+      this._cfg = data.config;
+    } else {
+      const d = DIFFICULTY[data.difficulty || 'normal'];
+      this._cfg = { stars: d.stars, aiInterval: d.aiInterval, maxAiRoutes: 6, startUnitsMult: 1.2, regenMult: 1.0 };
+    }
   }
 
   create() {
@@ -25,14 +30,16 @@ export default class GameScene extends Phaser.Scene {
 
     createStarfield(this);
 
-    const cfg       = DIFFICULTY[this.difficulty];
-    this.stars      = generateStars(W, H, cfg.stars);
+    const cfg       = this._cfg;
+    this.stars      = generateStars(W, H, cfg.stars, cfg.startUnitsMult, cfg.regenMult);
     this.routes     = [];
     this.ships      = [];
     this.phase      = 'playing';
     this.aiTimer    = 0;
     this.aiInterval = cfg.aiInterval;
+    this.maxAiRoutes = cfg.maxAiRoutes;
     this._lastDt    = 0;
+    this.gameSpeed  = 1;
 
     this.dragFrom   = null;
     this.dragPos    = null;
@@ -82,7 +89,7 @@ export default class GameScene extends Phaser.Scene {
     for (const r of this.routes) {
       r.dispatchTimer = (r.dispatchTimer || 0) - dt;
       if (r.dispatchTimer > 0) continue;
-      if (r.fromStar.units >= 2 && r.fromStar.troops.length > 0) {
+      if (r.fromStar.units >= 1 && r.fromStar.troops.length > 0) {
         if (!r._dispatched) { r._dispatched = true; debugLog(`route dispatch start: ships=${this.ships.length}`); }
         r.fromStar.units -= 1;
         const troop  = r.fromStar.troops.pop();
@@ -100,7 +107,6 @@ export default class GameScene extends Phaser.Scene {
     const snapshot = this.ships.slice();
     let totalSpawned = 0;
     for (const star of this.stars) {
-      if (star.owner === 0)            continue; // neutral stars don't intercept
       if (star.troops.length === 0)    continue;
       let spawned = 0;
       for (const ship of snapshot) {
@@ -138,12 +144,13 @@ export default class GameScene extends Phaser.Scene {
           fxSpark(this, ship.x, ship.y, ship.owner, 3);
           continue;
         }
+        ship.trail.push({ x: ship.x, y: ship.y });
+        if (ship.trail.length > 10) ship.trail.shift();
         ship.angle  = Math.atan2(tgt.y - ship.y, tgt.x - ship.x);
         ship.x     += Math.cos(ship.angle) * SHIP_SPEED * 1.35 * dt;
         ship.y     += Math.sin(ship.angle) * SHIP_SPEED * 1.35 * dt;
         if (Math.hypot(ship.x - tgt.x, ship.y - tgt.y) < 6) {
-          fxSpark(this, ship.x, ship.y, ship.owner, 6);
-          fxSpark(this, tgt.x,  tgt.y,  tgt.owner,  6);
+          fxIntercept(this, ship.x, ship.y, ship.owner, tgt.owner);
           tgt._destroyed = true;
         } else {
           alive.push(ship);
@@ -255,7 +262,7 @@ export default class GameScene extends Phaser.Scene {
     });
 
     replay.once('pointerdown', () => {
-      this.scene.restart({ difficulty: this.difficulty });
+      this.scene.restart({ config: this._cfg });
     });
   }
 
@@ -286,7 +293,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time, delta) {
-    const dt = delta / 1000;
+    const dt = (delta / 1000) * this.gameSpeed;
     this._lastDt = dt;
 
     for (const s of this.stars) {

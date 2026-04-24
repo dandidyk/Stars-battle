@@ -86,5 +86,32 @@ export default class StartScene extends Phaser.Scene {
         this.scene.start('Game', { difficulty: b.key });
       });
     });
+
+    // Quick Battle button
+    const qbY  = startY + buttons.length * gap + 28;
+    const qbW  = Math.min(W * 0.72, 300);
+
+    const qbBg = this.add.graphics();
+    const drawQB = (hover) => {
+      qbBg.clear();
+      qbBg.fillStyle(0x1a1a2e, hover ? 0.95 : 0.75);
+      qbBg.fillRoundedRect(W / 2 - qbW / 2, qbY - 22, qbW, 44, 10);
+      qbBg.lineStyle(hover ? 2 : 1.5, 0x9c88ff, hover ? 0.9 : 0.5);
+      qbBg.strokeRoundedRect(W / 2 - qbW / 2, qbY - 22, qbW, 44, 10);
+    };
+    drawQB(false);
+
+    this.add.text(W / 2, qbY, 'QUICK BATTLE  ⚙', {
+      fontSize: '17px',
+      fontFamily: 'Arial Black, Arial',
+      color: '#9c88ff',
+      stroke: '#000',
+      strokeThickness: 3,
+    }).setOrigin(0.5);
+
+    const qbZone = this.add.zone(W / 2, qbY, qbW, 44).setInteractive({ useHandCursor: true });
+    qbZone.on('pointerover', () => drawQB(true));
+    qbZone.on('pointerout',  () => drawQB(false));
+    qbZone.on('pointerdown', () => this.scene.start('QuickBattle'));
   }
 }

@@ -1,13 +1,14 @@
 import { OWNER_AI, OWNER_PLAYER } from '../constants.js';
 import { createRoute } from '../entities/route.js';
 
-const MAX_AI_ROUTES = 6;
+// per-game value set in GameScene as scene.maxAiRoutes
 
 export function updateAI(scene) {
   scene.aiTimer += scene._lastDt * 1000;
   if (scene.aiTimer < scene.aiInterval) return;
   scene.aiTimer = 0;
 
+  const MAX_AI_ROUTES = scene.maxAiRoutes || 6;
   const aiStars  = scene.stars.filter(s => s.owner === OWNER_AI);
   const aiRoutes = scene.routes.filter(r => r.owner === OWNER_AI);
 

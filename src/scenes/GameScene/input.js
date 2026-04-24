@@ -58,12 +58,12 @@ export function setupInput(scene) {
       }
       if (!hit) {
         scene.selectedStar = null;
+      } else if (scene.selectedStar && hit !== scene.selectedStar) {
+        tryCreateRoute(scene, scene.selectedStar, hit);
+        scene.selectedStar = null;
       } else if (hit.owner === OWNER_PLAYER) {
         scene.selectedStar = (scene.selectedStar === hit) ? null : hit;
         scene.selPulse = 0;
-      } else if (scene.selectedStar) {
-        tryCreateRoute(scene, scene.selectedStar, hit);
-        scene.selectedStar = null;
       }
       scene.dragFrom  = null;
       scene.dragPos   = null;
@@ -76,11 +76,12 @@ export function setupInput(scene) {
 }
 
 export function tryCreateRoute(scene, from, to) {
-  if (to.owner === OWNER_PLAYER) return;
+  if (to === from) return;
+  const reinforce = to.owner === OWNER_PLAYER;
   const dup = scene.routes.find(
     r => r.fromStar === from && r.toStar === to && r.owner === OWNER_PLAYER
   );
-  if (!dup) scene.routes.push(createRoute(OWNER_PLAYER, from, to));
+  if (!dup) scene.routes.push(createRoute(OWNER_PLAYER, from, to, reinforce));
 }
 
 export function cutRoutesAlongSwipe(scene) {
