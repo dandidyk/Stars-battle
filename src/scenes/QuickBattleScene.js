@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { createStarfield } from '../utils/starfield.js';
+import { DPR, px } from '../utils/dpr.js';
 
 const SETTINGS = [
   {
@@ -53,26 +54,26 @@ export default class QuickBattleScene extends Phaser.Scene {
 
     // Title
     this.add.text(W / 2, H * 0.10, 'QUICK BATTLE', {
-      fontSize: '38px',
+      fontSize: px(38),
       fontFamily: 'Arial Black, Arial',
       color: '#4fc3f7',
       stroke: '#0d0d1a',
-      strokeThickness: 6,
+      strokeThickness: Math.round(6 * DPR),
     }).setOrigin(0.5);
 
-    this.add.text(W / 2, H * 0.10 + 46, 'Configure your battle', {
-      fontSize: '15px',
+    this.add.text(W / 2, H * 0.10 + Math.round(46 * DPR), 'Configure your battle', {
+      fontSize: px(15),
       fontFamily: 'Arial',
       color: '#888899',
     }).setOrigin(0.5);
 
     // Back button
-    const back = this.add.text(20, 20, '← BACK', {
-      fontSize: '15px',
+    const back = this.add.text(Math.round(20 * DPR), Math.round(20 * DPR), '← BACK', {
+      fontSize: px(15),
       fontFamily: 'Arial',
       color: '#556677',
       stroke: '#000',
-      strokeThickness: 2,
+      strokeThickness: Math.round(2 * DPR),
     }).setInteractive({ useHandCursor: true });
     back.on('pointerover', () => back.setColor('#aabbcc'));
     back.on('pointerout',  () => back.setColor('#556677'));
@@ -82,42 +83,43 @@ export default class QuickBattleScene extends Phaser.Scene {
     this._indices = SETTINGS.map(s => s.default);
     this._valueTexts = [];
 
-    const rowH    = 64;
+    const rowH    = Math.round(64 * DPR);
     const startY  = H * 0.28;
-    const rowW    = Math.min(W * 0.85, 360);
+    const rowW    = Math.min(W * 0.85, Math.round(360 * DPR));
+    const rowGap  = Math.round(14 * DPR);
     const cx      = W / 2;
 
     SETTINGS.forEach((s, i) => {
-      const cy    = startY + i * (rowH + 14);
+      const cy    = startY + i * (rowH + rowGap);
       const color = SETTING_COLORS[i];
       const hexC  = Phaser.Display.Color.HexStringToColor(color).color;
 
       // Row background
       const bg = this.add.graphics();
       bg.fillStyle(0x0a1525, 0.75);
-      bg.fillRoundedRect(cx - rowW / 2, cy - rowH / 2, rowW, rowH, 10);
-      bg.lineStyle(1, hexC, 0.35);
-      bg.strokeRoundedRect(cx - rowW / 2, cy - rowH / 2, rowW, rowH, 10);
+      bg.fillRoundedRect(cx - rowW / 2, cy - rowH / 2, rowW, rowH, Math.round(10 * DPR));
+      bg.lineStyle(1 * DPR, hexC, 0.35);
+      bg.strokeRoundedRect(cx - rowW / 2, cy - rowH / 2, rowW, rowH, Math.round(10 * DPR));
 
       // Label
-      this.add.text(cx - rowW / 2 + 16, cy - 10, s.label, {
-        fontSize: '11px',
+      this.add.text(cx - rowW / 2 + Math.round(16 * DPR), cy - Math.round(10 * DPR), s.label, {
+        fontSize: px(11),
         fontFamily: 'Arial',
         color: color,
         alpha: 0.7,
       });
 
       // Value text
-      const vt = this.add.text(cx, cy + 10, s.options[this._indices[i]], {
-        fontSize: '20px',
+      const vt = this.add.text(cx, cy + Math.round(10 * DPR), s.options[this._indices[i]], {
+        fontSize: px(20),
         fontFamily: 'Arial Black, Arial',
         color: '#e0e8ff',
       }).setOrigin(0.5);
       this._valueTexts.push(vt);
 
       // Arrow left
-      const arrowL = this.add.text(cx - rowW / 2 + 52, cy + 10, '◄', {
-        fontSize: '18px',
+      const arrowL = this.add.text(cx - rowW / 2 + Math.round(52 * DPR), cy + Math.round(10 * DPR), '◄', {
+        fontSize: px(18),
         fontFamily: 'Arial',
         color: color,
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
@@ -131,8 +133,8 @@ export default class QuickBattleScene extends Phaser.Scene {
       });
 
       // Arrow right
-      const arrowR = this.add.text(cx + rowW / 2 - 52, cy + 10, '►', {
-        fontSize: '18px',
+      const arrowR = this.add.text(cx + rowW / 2 - Math.round(52 * DPR), cy + Math.round(10 * DPR), '►', {
+        fontSize: px(18),
         fontFamily: 'Arial',
         color: color,
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
@@ -147,28 +149,30 @@ export default class QuickBattleScene extends Phaser.Scene {
     });
 
     // START BATTLE button
-    const btnY  = startY + SETTINGS.length * (rowH + 14) + 36;
-    const btnW  = Math.min(W * 0.72, 280);
+    const btnY  = startY + SETTINGS.length * (rowH + rowGap) + Math.round(36 * DPR);
+    const btnW  = Math.min(W * 0.72, Math.round(280 * DPR));
+    const btnHh = Math.round(56 * DPR);
+    const btnR  = Math.round(14 * DPR);
 
     const startBg = this.add.graphics();
     const drawStartBtn = (hover) => {
       startBg.clear();
       startBg.fillStyle(0x0d2040, hover ? 1 : 0.85);
-      startBg.fillRoundedRect(cx - btnW / 2, btnY - 28, btnW, 56, 14);
-      startBg.lineStyle(hover ? 2 : 1.5, 0x4fc3f7, hover ? 1 : 0.7);
-      startBg.strokeRoundedRect(cx - btnW / 2, btnY - 28, btnW, 56, 14);
+      startBg.fillRoundedRect(cx - btnW / 2, btnY - btnHh / 2, btnW, btnHh, btnR);
+      startBg.lineStyle(hover ? 2 * DPR : 1.5 * DPR, 0x4fc3f7, hover ? 1 : 0.7);
+      startBg.strokeRoundedRect(cx - btnW / 2, btnY - btnHh / 2, btnW, btnHh, btnR);
     };
     drawStartBtn(false);
 
     this.add.text(cx, btnY, 'START BATTLE', {
-      fontSize: '22px',
+      fontSize: px(22),
       fontFamily: 'Arial Black, Arial',
       color: '#4fc3f7',
       stroke: '#000',
-      strokeThickness: 3,
+      strokeThickness: Math.round(3 * DPR),
     }).setOrigin(0.5);
 
-    const startZone = this.add.zone(cx, btnY, btnW, 56).setInteractive({ useHandCursor: true });
+    const startZone = this.add.zone(cx, btnY, btnW, btnHh).setInteractive({ useHandCursor: true });
     startZone.on('pointerover', () => drawStartBtn(true));
     startZone.on('pointerout',  () => drawStartBtn(false));
     startZone.on('pointerdown', () => {

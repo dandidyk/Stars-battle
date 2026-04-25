@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import { C, OWNER_PLAYER, OWNER_AI, OWNER_NEUTRAL } from '../../constants.js';
+import { DPR } from '../../utils/dpr.js';
 
 export function fxSpark(scene, x, y, owner, count) {
   const color = owner === OWNER_PLAYER ? C.PLAYER : (owner === OWNER_AI ? C.AI : C.NEUTRAL);
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const speed = 30 + Math.random() * 50;
-    const dot   = scene.add.circle(x, y, 2, color, 0.9);
+    const speed = (30 + Math.random() * 50) * DPR;
+    const dot   = scene.add.circle(x, y, 2 * DPR, color, 0.9);
     scene.tweens.add({
       targets:  dot,
       x:        x + Math.cos(angle) * speed,
@@ -24,7 +25,7 @@ export function fxIntercept(scene, x, y, defOwner, atkOwner) {
   const atkColor = atkOwner === OWNER_PLAYER ? C.PLAYER : (atkOwner === OWNER_AI ? C.AI : C.NEUTRAL);
 
   // White central flash
-  const flash = scene.add.circle(x, y, 7, 0xffffff, 1);
+  const flash = scene.add.circle(x, y, 7 * DPR, 0xffffff, 1);
   scene.tweens.add({
     targets: flash, scaleX: 0.1, scaleY: 0.1, alpha: 0,
     duration: 140, ease: 'Cubic.easeOut',
@@ -33,8 +34,8 @@ export function fxIntercept(scene, x, y, defOwner, atkOwner) {
 
   // Expanding ring
   const ring = scene.add.graphics();
-  ring.lineStyle(2, 0xffffff, 0.85);
-  ring.strokeCircle(x, y, 5);
+  ring.lineStyle(2 * DPR, 0xffffff, 0.85);
+  ring.strokeCircle(x, y, 5 * DPR);
   scene.tweens.add({
     targets: ring, scaleX: 4.5, scaleY: 4.5, alpha: 0,
     duration: 320, ease: 'Cubic.easeOut',
@@ -44,8 +45,8 @@ export function fxIntercept(scene, x, y, defOwner, atkOwner) {
   // Defender-color sparks (bigger, faster)
   for (let i = 0; i < 9; i++) {
     const a = Math.random() * Math.PI * 2;
-    const spd = 50 + Math.random() * 70;
-    const sz  = 1.5 + Math.random() * 2;
+    const spd = (50 + Math.random() * 70) * DPR;
+    const sz  = (1.5 + Math.random() * 2) * DPR;
     const dot = scene.add.circle(x, y, sz, defColor, 1);
     scene.tweens.add({
       targets: dot,
@@ -59,8 +60,8 @@ export function fxIntercept(scene, x, y, defOwner, atkOwner) {
   // Attacker-color sparks (smaller, slower — debris)
   for (let i = 0; i < 6; i++) {
     const a = Math.random() * Math.PI * 2;
-    const spd = 20 + Math.random() * 40;
-    const dot = scene.add.circle(x, y, 1.2, atkColor, 0.85);
+    const spd = (20 + Math.random() * 40) * DPR;
+    const dot = scene.add.circle(x, y, 1.2 * DPR, atkColor, 0.85);
     scene.tweens.add({
       targets: dot,
       x: x + Math.cos(a) * spd, y: y + Math.sin(a) * spd,
@@ -74,7 +75,7 @@ export function fxIntercept(scene, x, y, defOwner, atkOwner) {
 export function fxCapture(scene, star, prevOwner) {
   const color = star.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
   const ring  = scene.add.graphics();
-  ring.lineStyle(3, color, 0.9);
+  ring.lineStyle(3 * DPR, color, 0.9);
   ring.strokeCircle(star.x, star.y, star.radius);
   scene.tweens.add({
     targets:  ring,
@@ -88,8 +89,8 @@ export function fxCapture(scene, star, prevOwner) {
 
   fxSpark(scene, star.x, star.y, star.owner, 12);
 
-  if (star.radius >= 28) {
-    const intensity = Phaser.Math.Clamp((star.radius - 28) / 10 * 0.006, 0.002, 0.008);
+  if (star.radius >= Math.round(28 * DPR)) {
+    const intensity = Phaser.Math.Clamp((star.radius - Math.round(28 * DPR)) / (10 * DPR) * 0.006, 0.002, 0.008);
     scene.cameras.main.shake(250, intensity);
   }
 }
