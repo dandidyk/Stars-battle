@@ -23,7 +23,7 @@ A fast-paced real-time strategy game for mobile browsers — inspired by Galcon 
 | Attack / Reinforce | Select → tap target |
 | Create route | Drag from your star to target |
 | Cancel route | Swipe across the route line |
-| Game speed | Button at bottom center |
+| Game speed | Slider at bottom center |
 
 ## Modes
 
@@ -44,8 +44,20 @@ Full manual setup:
 
 - **Routes** — persistent attack or reinforce lanes between stars
 - **Interception** — stars spawn defenders against nearby enemy ships
+- **Route risk** — AI evaluates enemy planets along attack paths and avoids highly interceptable routes
 - **Reinforcement** — send ships to friendly stars (green routes)
-- **Game speed** — 0.5× / 1× / 2× toggle in-game
+- **Game speed** — 0.5× / 1× / 1.5× / 2× / 3× / 4× slider in-game
+
+## Visuals
+
+- **Plasma shader** — each planet has a unique animated plasma surface (GLSL FBm + two-level domain warping)
+- **Color by owner** — blue (player), distinct AI faction colors, silver-gray (neutral); colors change on capture
+- **Limb darkening** — realistic solar disc falloff toward the edge
+- **Smooth glow** — soft halo around each planet, accumulates from 14 overlapping circles
+- **Orbiting squadrons** — ships group into small rotating formations around their home planet
+- **Spark FX** — hit sparks and expanding ring on planet capture
+- **Camera shake** — on large captures
+- **Rocket ships** — triangular rocket shape with white nose-tip highlight
 
 ---
 
@@ -64,6 +76,16 @@ Full manual setup:
 - [ ] **Star upgrades** — spend units to upgrade attack or defense level (tap-hold on owned star)
 - [ ] **Wormholes** — paired teleport points on the map
 - [ ] **Asteroid belts** — impassable zones that ships must route around
+
+### AI Improvement Plan
+- [x] **Stage 1: Split AI decisions into clear helpers** — keep current behavior but isolate target scoring, defense helper selection, duplicate route checks, and attack route selection.
+- [x] **Stage 2: First-pass attack restraint** — estimate target cost from units/HP, avoid opening attacks from weak or already-busy sources, and factor in route interception risk.
+- [x] **Stage 3: First-pass source garrisons** — keep a minimum unit reserve and prevent one source planet from opening multiple attack routes.
+- [x] **Stage 4: First-pass smarter defense** — estimate incoming pressure, avoid reinforcement loops, ignore weak probes against stocked planets, choose useful nearby helpers, and prioritize high-value endangered planets.
+- [x] **Stage 5: First-pass route economy** — cancel reinforcement when the target is safe, stop attacks from drained/threatened sources, avoid stale owned-target routes, and shift routes as the map changes.
+- [x] **Stage 6: First-pass AI personalities** — assign Balanced, Expander, Aggressor, Turtle, Opportunist, and Swarm profiles across AI factions.
+- [x] **Stage 7: First-pass difficulty tuning** — make Passive/Easy/Normal/Hard/Brutal differ by reaction time, aggression, defense, route limits, risk tolerance, player focus, and mistake chance.
+- [x] **Stage 8: First-pass AI debug overlay** — show each AI's personality and latest action in the backtick debug overlay.
 
 ### Phase 3 — Progression
 - [ ] **Campaign mode** — hand-crafted levels with story text
@@ -88,9 +110,11 @@ Full manual setup:
 
 | Layer | Tech |
 |-------|------|
-| Renderer | [Phaser 3](https://phaser.io) |
+| Renderer | [Phaser 3](https://phaser.io) WebGL |
+| Shader | GLSL — FBm plasma with domain warping |
 | Build | Vite 5 |
 | Language | ES Modules (vanilla JS) |
+| HiDPI | `Scale.NONE + zoom:1/dpr` |
 | Deploy | GitHub Actions → GitHub Pages |
 
 ## Local Development
