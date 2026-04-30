@@ -40,6 +40,7 @@ export function createDefender(owner, fromStar, startX, startY, targetShip) {
     totalDist:  Math.hypot(targetShip.x - startX, targetShip.y - startY),
     hp:         1.0,
     _hit:       new Set(),
+    trail:      [],
   };
 }
 

@@ -3,15 +3,20 @@ import {
   OWNER_NEUTRAL, OWNER_PLAYER, OWNER_AI,
   STAR_RADIUS_MIN, STAR_RADIUS_MAX, STAR_MARGIN, STAR_MIN_GAP,
 } from '../constants.js';
+import { DPR } from '../utils/dpr.js';
 
-export function buildStar(id, x, y, radius, owner) {
+const R_MIN = Math.round(STAR_RADIUS_MIN * DPR);
+const R_MAX = Math.round(STAR_RADIUS_MAX * DPR);
+const MARGIN  = Math.round(STAR_MARGIN   * DPR);
+const MIN_GAP = Math.round(STAR_MIN_GAP  * DPR);
+
+export function buildStar(id, x, y, radius, owner, startUnitsMult = 1.2, regenMult = 1.0) {
   const maxUnits  = Math.round(radius * 2.5);
   const maxHp     = Math.round(radius * 2);
-  const regenRate = radius * 0.7 / STAR_RADIUS_MAX; // troops/sec
-  const hpRegen   = radius * 0.15 / STAR_RADIUS_MAX; // hp/sec (slower)
-  const units = (owner === OWNER_PLAYER || owner === OWNER_AI)
-    ? Math.round(radius * 1.2)
-    : Math.round(radius * 0.5);
+  const regenRate = radius * 0.7 / STAR_RADIUS_MAX * regenMult;
+  const hpRegen   = radius * 0.15 / STAR_RADIUS_MAX * regenMult;
+  const baseMult  = (owner === OWNER_PLAYER || owner === OWNER_AI) ? startUnitsMult : startUnitsMult * 0.4;
+  const units     = Math.min(Math.round(radius * baseMult), maxUnits);
   return {
     id,
     x, y,
@@ -31,19 +36,19 @@ export function buildStar(id, x, y, radius, owner) {
   };
 }
 
-export function generateStars(W, H, count) {
+export function generateStars(W, H, count, startUnitsMult = 1.2, regenMult = 1.0) {
   const rng   = new Phaser.Math.RandomDataGenerator([`map_${count}_${W}`]);
   const pts   = [];
   const tries = 800;
 
   for (let i = 0; i < count; i++) {
-    const r = rng.between(STAR_RADIUS_MIN, STAR_RADIUS_MAX);
+    const r = rng.between(R_MIN, R_MAX);
     for (let t = 0; t < tries; t++) {
-      const x = rng.between(STAR_MARGIN + r, W - STAR_MARGIN - r);
-      const y = rng.between(STAR_MARGIN + r, H - STAR_MARGIN - r);
+      const x = rng.between(MARGIN + r, W - MARGIN - r);
+      const y = rng.between(MARGIN + r, H - MARGIN - r);
       let ok = true;
       for (const s of pts) {
-        if (Math.hypot(x - s.x, y - s.y) < s.r + r + STAR_MIN_GAP) { ok = false; break; }
+        if (Math.hypot(x - s.x, y - s.y) < s.r + r + MIN_GAP) { ok = false; break; }
       }
       if (ok) { pts.push({ x, y, r }); break; }
     }
@@ -58,6 +63,6 @@ export function generateStars(W, H, count) {
     let owner = OWNER_NEUTRAL;
     if (p === playerPt) owner = OWNER_PLAYER;
     if (p === aiPt)     owner = OWNER_AI;
-    return buildStar(i, p.x, p.y, p.r, owner);
+    return buildStar(i, p.x, p.y, p.r, owner, startUnitsMult, regenMult);
   });
 }

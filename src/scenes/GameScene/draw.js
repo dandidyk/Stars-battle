@@ -1,4 +1,5 @@
 import { C, OWNER_NEUTRAL, OWNER_PLAYER, OWNER_AI } from '../../constants.js';
+import { DPR } from '../../utils/dpr.js';
 
 function drawRocket(gfx, x, y, angle, color, size) {
   const c  = Math.cos(angle), s = Math.sin(angle);
@@ -56,7 +57,7 @@ export function drawStarShape(gfx, s) {
   gfx.fillCircle(s.x, s.y, R);
   gfx.fillStyle(color, litAlpha);
   gfx.fillCircle(s.x - R * 0.08, s.y - R * 0.12, R * 0.93);
-  gfx.lineStyle(R * 0.22, color, rimAlpha);
+  gfx.lineStyle(R * 0.22, color, rimAlpha); // R is already device-px
   gfx.strokeCircle(s.x, s.y, R * 0.89);
 
   // ── Specular highlight ────────────────────────────────────────
@@ -68,9 +69,9 @@ export function drawStarShape(gfx, s) {
   // ── HP arc ────────────────────────────────────────────────────
   if (hpRatio < 0.999) {
     const arcR = R * 1.08;
-    gfx.lineStyle(2, 0x223344, 0.7);
+    gfx.lineStyle(2 * DPR, 0x223344, 0.7);
     gfx.strokeCircle(s.x, s.y, arcR);
-    gfx.lineStyle(2, color, 0.9);
+    gfx.lineStyle(2 * DPR, color, 0.9);
     gfx.beginPath();
     gfx.arc(s.x, s.y, arcR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * hpRatio, false);
     gfx.strokePath();
@@ -83,7 +84,7 @@ export function drawStarShape(gfx, s) {
     const py     = s.y + Math.sin(tr.angle) * dist;
     // Tangent direction of orbit — rocket faces direction of travel
     const facing = tr.angle + Math.PI / 2 * Math.sign(tr.speed);
-    const size   = 1.4 + 2.0 * tr.progress;
+    const size   = (1.4 + 2.0 * tr.progress) * DPR;
     const alpha  = 0.3 + 0.65 * tr.progress;
 
     gfx.setAlpha(alpha);
@@ -100,7 +101,7 @@ export function drawStars(scene) {
   for (let i = 0; i < scene.stars.length; i++) {
     const s = scene.stars[i];
     scene.unitLabels[i].setText(Math.floor(s.units));
-    scene.unitLabels[i].setY(s.y + s.radius + 12);
+    scene.unitLabels[i].setY(s.y + s.radius + Math.round(12 * DPR));
   }
 }
 
@@ -108,14 +109,18 @@ export function drawRoutes(scene) {
   const dt = scene._lastDt || 0;
   scene.routeGfx.clear();
   for (const r of scene.routes) {
-    const color = r.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
-    const from  = r.fromStar;
-    const to    = r.toStar;
-    const dx    = to.x - from.x;
-    const dy    = to.y - from.y;
-    const len   = Math.hypot(dx, dy);
-    const ux    = dx / len;
-    const uy    = dy / len;
+    let color;
+    if (r.reinforce)              color = 0x4caf50;
+    else if (r.owner === OWNER_PLAYER) color = C.PLAYER;
+    else                          color = C.AI;
+
+    const from = r.fromStar;
+    const to   = r.toStar;
+    const dx   = to.x - from.x;
+    const dy   = to.y - from.y;
+    const len  = Math.hypot(dx, dy);
+    const ux   = dx / len;
+    const uy   = dy / len;
 
     const x1 = from.x + ux * from.radius;
     const y1 = from.y + uy * from.radius;
@@ -123,11 +128,13 @@ export function drawRoutes(scene) {
     const y2 = to.y   - uy * to.radius;
 
     r.dashOffset = (r.dashOffset || 0) + dt * 40;
-    const dashLen = 10, gapLen = 6, cycle = dashLen + gapLen;
+    const dashLen = r.reinforce ? 6 : 10;
+    const gapLen  = r.reinforce ? 8 : 6;
+    const cycle   = dashLen + gapLen;
     const segLen  = Math.hypot(x2 - x1, y2 - y1);
     const offset  = r.dashOffset % cycle;
 
-    scene.routeGfx.lineStyle(1.5, color, 0.55);
+    scene.routeGfx.lineStyle((r.reinforce ? 1.2 : 1.5) * DPR, color, r.reinforce ? 0.45 : 0.55);
     let pos = -offset;
     while (pos < segLen) {
       const start = Math.max(pos, 0);
@@ -145,9 +152,41 @@ export function drawRoutes(scene) {
 
 export function drawShips(scene) {
   scene.shipGfx.clear();
+  const now = Date.now();
+
   for (const ship of scene.ships) {
     const color = ship.owner === OWNER_PLAYER ? C.PLAYER : C.AI;
-    drawRocket(scene.shipGfx, ship.x, ship.y, ship.angle, color, 3.5);
+
+    if (ship.type === 'defender') {
+      // Trail
+      const trail = ship.trail;
+      for (let i = 1; i < trail.length; i++) {
+        const t = i / trail.length;
+        scene.shipGfx.lineStyle(1.5 * DPR * t, color, 0.55 * t);
+        scene.shipGfx.beginPath();
+        scene.shipGfx.moveTo(trail[i - 1].x, trail[i - 1].y);
+        scene.shipGfx.lineTo(trail[i].x,     trail[i].y);
+        scene.shipGfx.strokePath();
+      }
+
+      // Targeting beam to quarry
+      const tgt = ship.targetShip;
+      if (tgt && !tgt._destroyed) {
+        const pulse = 0.18 + 0.12 * Math.sin(now / 80);
+        scene.shipGfx.lineStyle(1 * DPR, color, pulse);
+        scene.shipGfx.beginPath();
+        scene.shipGfx.moveTo(ship.x, ship.y);
+        scene.shipGfx.lineTo(tgt.x,  tgt.y);
+        scene.shipGfx.strokePath();
+      }
+
+      // Defender itself — brighter corona + rocket
+      scene.shipGfx.fillStyle(color, 0.25);
+      scene.shipGfx.fillCircle(ship.x, ship.y, 7 * DPR);
+      drawRocket(scene.shipGfx, ship.x, ship.y, ship.angle, color, 4.2 * DPR);
+    } else {
+      drawRocket(scene.shipGfx, ship.x, ship.y, ship.angle, color, 3.5 * DPR);
+    }
   }
 }
 
@@ -168,7 +207,7 @@ export function drawDrag(scene) {
   const ux  = dx / len;
   const uy  = dy / len;
 
-  scene.dragGfx.lineStyle(2, C.PLAYER, 0.7);
+  scene.dragGfx.lineStyle(2 * DPR, C.PLAYER, 0.7);
   const dash = 10, gap = 6, cycle = dash + gap;
   let pos = 0;
   while (pos < len) {
@@ -183,7 +222,7 @@ export function drawDrag(scene) {
   const hitStar  = scene.starAt(tx, ty);
   const dotColor = (hitStar && hitStar !== s) ? C.PLAYER : 0xffffff;
   scene.dragGfx.fillStyle(dotColor, 0.8);
-  scene.dragGfx.fillCircle(tx, ty, 5);
+  scene.dragGfx.fillCircle(tx, ty, 5 * DPR);
 }
 
 export function drawSelection(scene) {
@@ -192,8 +231,8 @@ export function drawSelection(scene) {
   const s     = scene.selectedStar;
   const pulse = 0.7 + 0.3 * Math.sin(scene.selPulse * 4);
   const r     = s.radius * 1.55 + pulse * 4;
-  scene.selectionGfx.lineStyle(2, C.PLAYER, 0.55 + 0.35 * pulse);
+  scene.selectionGfx.lineStyle(2 * DPR, C.PLAYER, 0.55 + 0.35 * pulse);
   scene.selectionGfx.strokeCircle(s.x, s.y, r);
-  scene.selectionGfx.lineStyle(1, C.PLAYER, 0.25);
-  scene.selectionGfx.strokeCircle(s.x, s.y, r + 5);
+  scene.selectionGfx.lineStyle(1 * DPR, C.PLAYER, 0.25);
+  scene.selectionGfx.strokeCircle(s.x, s.y, r + 5 * DPR);
 }

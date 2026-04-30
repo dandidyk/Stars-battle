@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { DPR } from './dpr.js';
 
 export function createStarfield(scene) {
   const W   = scene.scale.width;
@@ -8,7 +9,7 @@ export function createStarfield(scene) {
   for (let i = 0; i < 160; i++) {
     const x     = rng.between(0, W);
     const y     = rng.between(0, H);
-    const r     = rng.between(1, 10) < 8 ? 0.8 : 1.5;
+    const r     = rng.between(1, 10) < 8 ? 0.8 * DPR : 1.5 * DPR;
     const alpha = rng.realInRange(0.25, 0.85);
 
     const dot = scene.add.circle(x, y, r, 0xffffff, alpha);

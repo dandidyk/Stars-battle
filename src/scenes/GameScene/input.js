@@ -1,9 +1,10 @@
 import { OWNER_PLAYER } from '../../constants.js';
 import { createRoute } from '../../entities/route.js';
 import { segmentsIntersect, routeLineEndpoints } from '../../utils/geometry.js';
+import { DPR } from '../../utils/dpr.js';
 
 export function setupInput(scene) {
-  const DRAG_THRESHOLD = 16;
+  const DRAG_THRESHOLD = Math.round(16 * DPR);
 
   scene.input.on('pointerdown', (ptr) => {
     if (scene.phase !== 'playing') return;
@@ -42,7 +43,7 @@ export function setupInput(scene) {
         ptr.x - scene.swipePath[0].x,
         ptr.y - scene.swipePath[0].y
       );
-      if (swipeDist > 40) cutRoutesAlongSwipe(scene);
+      if (swipeDist > Math.round(40 * DPR)) cutRoutesAlongSwipe(scene);
       scene.swipePath = null;
       return;
     }
@@ -58,12 +59,12 @@ export function setupInput(scene) {
       }
       if (!hit) {
         scene.selectedStar = null;
+      } else if (scene.selectedStar && hit !== scene.selectedStar) {
+        tryCreateRoute(scene, scene.selectedStar, hit);
+        scene.selectedStar = null;
       } else if (hit.owner === OWNER_PLAYER) {
         scene.selectedStar = (scene.selectedStar === hit) ? null : hit;
         scene.selPulse = 0;
-      } else if (scene.selectedStar) {
-        tryCreateRoute(scene, scene.selectedStar, hit);
-        scene.selectedStar = null;
       }
       scene.dragFrom  = null;
       scene.dragPos   = null;
@@ -76,11 +77,12 @@ export function setupInput(scene) {
 }
 
 export function tryCreateRoute(scene, from, to) {
-  if (to.owner === OWNER_PLAYER) return;
+  if (to === from) return;
+  const reinforce = to.owner === OWNER_PLAYER;
   const dup = scene.routes.find(
     r => r.fromStar === from && r.toStar === to && r.owner === OWNER_PLAYER
   );
-  if (!dup) scene.routes.push(createRoute(OWNER_PLAYER, from, to));
+  if (!dup) scene.routes.push(createRoute(OWNER_PLAYER, from, to, reinforce));
 }
 
 export function cutRoutesAlongSwipe(scene) {
@@ -103,7 +105,7 @@ export function cutRoutesAlongSwipe(scene) {
   for (const route of cut) {
     const { x1, y1, x2, y2 } = routeLineEndpoints(route);
     const flash = scene.add.graphics();
-    flash.lineStyle(3, 0xffffff, 0.9);
+    flash.lineStyle(3 * DPR, 0xffffff, 0.9);
     flash.beginPath();
     flash.moveTo(x1, y1);
     flash.lineTo(x2, y2);
